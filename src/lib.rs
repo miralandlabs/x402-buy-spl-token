@@ -16,6 +16,7 @@ pub mod parameters;
 pub mod purchase_ledger;
 pub mod quote;
 pub mod registry_client;
+pub mod route_handler;
 pub mod rpc_retry;
 pub mod seller_signer;
 pub mod sla_builder;

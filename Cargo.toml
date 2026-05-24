@@ -10,6 +10,10 @@ license = "MIT OR Apache-2.0"
 name = "x402-buy-spl-token"
 path = "src/main.rs"
 
+[[bin]]
+name = "buy_spl_token_api"
+path = "src/bin/buy_spl_token_api.rs"
+
 [dependencies]
 anyhow = "1.0"
 axum = "0.8"

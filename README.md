@@ -97,6 +97,16 @@ Paid request: retry with `PAYMENT-SIGNATURE` after signing `FundPayment` via pr4
 
 Set `DATABASE_ENABLED=true` and `DATABASE_URL=...` for durable `purchase_orders` idempotency and `parameters` overrides.
 
+## Devnet end-to-end test
+
+```bash
+./scripts/test-buy-spl-token-devnet.sh
+```
+
+See [`docs/BUY-SPL-TOKEN-DEVNET-TEST.md`](docs/BUY-SPL-TOKEN-DEVNET-TEST.md) for prerequisites, env overrides, and failure modes. Defaults target the preview seller at `https://preview.spl-token.hashspace.me` and pr402 at `https://preview.agent.pay402.me` (same deployment as `https://preview.ipay.sh`).
+
+Deploy to Vercel with the included [`vercel.json`](vercel.json) (Rust entry: `src/bin/buy_spl_token_api.rs`).
+
 ## Endpoints
 
 | Method | Path | Description |
