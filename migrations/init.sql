@@ -65,7 +65,15 @@ CREATE INDEX IF NOT EXISTS idx_purchase_orders_state ON purchase_orders (state A
 --   ('spl-token-balance', 'check-balance', 'X402_PAYMENT_AMOUNT_USDC',   '0.05'),
 --   ('spl-token-balance', 'check-balance', 'X402_ACCEPTS_JSON',     '[{"kind":"usdc","amountUi":"0.01"},{"kind":"sol","amountUi":"0.00001"}]'),
 --   ('spl-token-balance', 'buy-spl-token', 'BUY_SPL_TOKEN_CATALOG_JSON',
---    '[{"mint":"...","decimals":6,"price_usdc_ui":"0.42","name":"Merry Xmas"}]')
+--    '[{"mint":"...","decimals":6,"price_usdc_ui":"0.42","deliver_amount_ui":"1000","name":"Merry Xmas"}]')
 -- ON CONFLICT (service, endpoint, param_name) DO UPDATE SET
 --   param_value = EXCLUDED.param_value,
 --   updated_at  = NOW();
+
+
+INSERT INTO parameters (service, endpoint, param_name, param_value) VALUES
+  ('x402-buy-spl-token', 'buy-spl-token', 'BUY_SPL_TOKEN_CATALOG_JSON',
+   '[{"mint":"5bpyckh5YBVG5fB63PSm4BGPjD5sw1TwBtU5GGd9VRRP","decimals":6,"price_usdc_ui":"2.00","deliver_amount_ui":"1","name":"Merry Xmas"}]')
+ON CONFLICT (service, endpoint, param_name) DO UPDATE SET
+  param_value = EXCLUDED.param_value,
+  updated_at  = NOW();

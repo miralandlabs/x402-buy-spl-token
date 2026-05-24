@@ -1,7 +1,8 @@
 use {
     crate::{
         catalog::TokenCatalog, config::Config, db::ParametersDb, error::Error,
-        purchase_ledger::PurchaseLedger, seller_signer::SellerSigner, x402::FacilitatorClient,
+        merchant_signer::MerchantSigner, purchase_ledger::PurchaseLedger,
+        seller_signer::SellerSigner, x402::FacilitatorClient,
     },
     solana_commitment_config::CommitmentConfig,
     std::sync::Arc,
@@ -16,7 +17,10 @@ pub struct AppState {
     pub ledger: PurchaseLedger,
     pub facilitator: Arc<FacilitatorClient>,
     pub catalog: Option<Arc<TokenCatalog>>,
+    /// Delivery hot key — signs SPL `TransferChecked` only.
     pub seller_signer: Option<Arc<SellerSigner>>,
+    /// Merchant payout key — signs `SubmitDelivery` (`payment.seller` authority).
+    pub merchant_signer: Option<Arc<MerchantSigner>>,
 }
 
 impl AppState {
@@ -60,6 +64,7 @@ impl AppState {
             facilitator: Arc::new(facilitator),
             catalog: None,
             seller_signer: None,
+            merchant_signer: None,
         })
     }
 }
@@ -74,6 +79,7 @@ impl Clone for AppState {
             facilitator: Arc::clone(&self.facilitator),
             catalog: self.catalog.as_ref().map(Arc::clone),
             seller_signer: self.seller_signer.as_ref().map(Arc::clone),
+            merchant_signer: self.merchant_signer.as_ref().map(Arc::clone),
         }
     }
 }

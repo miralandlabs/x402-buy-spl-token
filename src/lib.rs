@@ -1,3 +1,4 @@
+pub mod amounts;
 pub mod axum_adapter;
 pub mod catalog;
 pub mod cold_start;
@@ -9,9 +10,11 @@ pub mod handler;
 pub mod init;
 pub mod intent_contract;
 pub mod memory_ledger;
+pub mod merchant_signer;
 pub mod orders;
 pub mod parameters;
 pub mod purchase_ledger;
+pub mod quote;
 pub mod registry_client;
 pub mod rpc_retry;
 pub mod seller_signer;

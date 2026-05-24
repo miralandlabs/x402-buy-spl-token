@@ -2,7 +2,7 @@
 name = "x402-buy-spl-token"
 description = "Open-source x402 sla-escrow reference seller: buy SPL tokens for USDC"
 repository = "https://github.com/miralandlabs/x402-buy-spl-token"
-version = "0.1.0"
+version = "0.3.2"
 edition = "2021"
 license = "MIT OR Apache-2.0"
 
@@ -56,3 +56,4 @@ dashmap = "6"
 
 [dev-dependencies]
 tokio = { version = "1.0", features = ["macros", "rt-multi-thread", "test-util"] }
+wiremock = "0.6"

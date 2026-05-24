@@ -12,6 +12,8 @@ pub struct Config {
     pub x402_facilitator_url: String,
     pub x402_network: String,
     pub x402_pay_to: String,
+    /// Merchant payout identity (`extra.merchantWallet`). Validated at cold start
+    /// via [`crate::cold_start`] (Postgres row or env alias chain).
     pub x402_merchant_wallet: Option<String>,
     pub x402_timeout_sec: u64,
     /// When true (default if `DATABASE_URL` is set), Postgres backs parameters + purchase ledger.
@@ -20,11 +22,10 @@ pub struct Config {
 
 impl Config {
     pub fn from_env() -> Result<Self, Error> {
-        let listen_addr =
-            env::var("LISTEN_ADDR").unwrap_or_else(|_| "0.0.0.0:8080".to_string());
+        let listen_addr = env::var("LISTEN_ADDR").unwrap_or_else(|_| "0.0.0.0:8080".to_string());
 
-        let solana_rpc_url = env::var("RPC_URL")
-            .unwrap_or_else(|_| "https://api.devnet.solana.com".to_string());
+        let solana_rpc_url =
+            env::var("RPC_URL").unwrap_or_else(|_| "https://api.devnet.solana.com".to_string());
 
         let x402_facilitator_url = env::var("X402_FACILITATOR_URL").map_err(|_| {
             Error::Internal(

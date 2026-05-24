@@ -5,7 +5,8 @@ use {
 
 /// Convert a handler [`Response`] into an Axum-compatible triple.
 pub fn into_axum(resp: Response<Body>) -> (StatusCode, HeaderMap, String) {
-    let status = StatusCode::from_u16(resp.status().as_u16()).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR);
+    let status =
+        StatusCode::from_u16(resp.status().as_u16()).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR);
     let mut headers = HeaderMap::new();
     for (name, value) in resp.headers().iter() {
         if let Ok(v) = value.to_str() {

@@ -795,9 +795,6 @@ mod tests {
         db.execute_batch(include_str!("../migrations/init.sql"))
             .await
             .expect("init.sql");
-        db.execute_batch(include_str!("../migrations/0002_purchase_orders.sql"))
-            .await
-            .expect("0002_purchase_orders.sql");
         // Reach into the pool through a thin shim — we only need the pool
         // for the orders helpers; the parameters db has its own.
         Some(reconnect_to_pool(&db_url_or_skip().unwrap()))

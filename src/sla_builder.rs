@@ -33,7 +33,7 @@
 //!     {
 //!       "decimals": 6,
 //!       "direction": "in",
-//!       "min_amount": "1000000",    // price_units, raw decimal string
+//!       "min_amount": "1000000",    // deliver_amount_raw, decimal string
 //!       "mint": "<base58 mint>",
 //!       "recipient_owner": "<base58 owner>",
 //!       "sender_owner": "<base58 seller pubkey>"
@@ -82,9 +82,9 @@ pub struct TransferSlaInputs {
     /// Configured decimals for `mint`. Echoed into the SLA so downstream
     /// consumers can interpret `min_amount` without a separate RPC call.
     pub decimals: u8,
-    /// Raw token amount the seller MUST deliver (`price_usdc_ui * 10^decimals`).
+    /// Raw SPL amount the seller MUST deliver for the session (scaled quote).
     /// Encoded into the SLA as a decimal string under `min_amount`.
-    pub price_units: u64,
+    pub deliver_amount_raw: u64,
     /// Base58 pubkey of the destination ATA's owner (the buyer's wallet).
     pub recipient_owner: String,
     /// Buyer-supplied 32-byte nonce, hex-encoded as 64 lowercase chars.
@@ -270,7 +270,7 @@ impl TransferSlaInputs {
         );
         transfer.insert(
             "min_amount".into(),
-            Value::String(self.price_units.to_string()),
+            Value::String(self.deliver_amount_raw.to_string()),
         );
         transfer.insert("direction".into(), Value::String("in".into()));
         transfer.insert(
@@ -465,7 +465,7 @@ mod tests {
         TransferSlaInputs {
             mint: VALID_MINT.to_string(),
             decimals: 6,
-            price_units: 1_000_000,
+            deliver_amount_raw: 1_000_000,
             recipient_owner: VALID_RECIPIENT.to_string(),
             // 64 lowercase hex chars (`[0-9a-f]`) — the buyer's 32-byte nonce.
             buyer_nonce: "abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789"
@@ -547,7 +547,7 @@ mod tests {
         transfer_b.insert("mint".into(), Value::String(inputs.mint.clone()));
         transfer_b.insert(
             "min_amount".into(),
-            Value::String(inputs.price_units.to_string()),
+            Value::String(inputs.deliver_amount_raw.to_string()),
         );
         transfer_b.insert("direction".into(), Value::String("in".into()));
         transfer_b.insert("decimals".into(), Value::from(inputs.decimals));

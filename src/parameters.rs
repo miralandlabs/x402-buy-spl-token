@@ -127,6 +127,7 @@ pub const X402_NETWORK: &str = "X402_NETWORK";
 pub const X402_ACCEPTS_JSON: &str = "X402_ACCEPTS_JSON";
 pub const X402_PAY_TO: &str = "X402_PAY_TO";
 pub const X402_MERCHANT_WALLET: &str = "X402_MERCHANT_WALLET";
+pub const X402_BENEFICIARY: &str = "X402_BENEFICIARY";
 pub const X402_SCHEME: &str = "X402_SCHEME";
 pub const X402_PAYMENT_TIMEOUT_SECONDS: &str = "X402_PAYMENT_TIMEOUT_SECONDS";
 pub const X402_PAYMENT_AMOUNT_USDC: &str = "X402_PAYMENT_AMOUNT_USDC";
@@ -219,12 +220,58 @@ pub async fn resolve_merchant_wallet(db: Option<&ParametersDb>, endpoint: &str) 
     .await
 }
 
+/// Optional collection wallet; when set, pr402 prefers this over `merchantWallet`
+/// for `FundPayment.seller` / `ReleasePayment`.
+pub async fn resolve_beneficiary(db: Option<&ParametersDb>, endpoint: &str) -> Option<String> {
+    resolve_string(
+        db,
+        endpoint,
+        X402_BENEFICIARY,
+        Some("X402_BENEFICIARY|BENEFICIARY"),
+    )
+    .await
+}
+
+/// Payout identity encoded as on-chain `payment.seller` (matches pr402 build order).
+pub async fn resolve_fund_payment_seller(
+    db: Option<&ParametersDb>,
+    endpoint: &str,
+) -> Option<String> {
+    resolve_beneficiary(db, endpoint)
+        .await
+        .filter(|s| !s.is_empty())
+        .or(resolve_merchant_wallet(db, endpoint).await)
+        .filter(|s| !s.is_empty())
+}
+
 pub async fn resolve_scheme(db: Option<&ParametersDb>, endpoint: &str) -> Option<String> {
     resolve_string(db, endpoint, X402_SCHEME, Some(X402_SCHEME)).await
 }
 
 pub async fn resolve_accepts_json(db: Option<&ParametersDb>, endpoint: &str) -> Option<String> {
     resolve_string(db, endpoint, X402_ACCEPTS_JSON, Some(X402_ACCEPTS_JSON)).await
+}
+
+/// Parse `ORACLE_AUTHORITIES` (JSON array or comma/whitespace-separated pubkeys).
+pub fn parse_oracle_authorities(raw: &str) -> Vec<String> {
+    let trimmed = raw.trim();
+    if trimmed.is_empty() {
+        return Vec::new();
+    }
+    if trimmed.starts_with('[') {
+        if let Ok(arr) = serde_json::from_str::<Vec<String>>(trimmed) {
+            return arr
+                .into_iter()
+                .map(|s| s.trim().to_string())
+                .filter(|s| !s.is_empty())
+                .collect();
+        }
+    }
+    trimmed
+        .split(|c: char| c == ',' || c.is_whitespace())
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+        .collect()
 }
 
 pub async fn resolve_timeout_sec(db: Option<&ParametersDb>, endpoint: &str, default: u64) -> u64 {
