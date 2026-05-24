@@ -26,9 +26,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let config = Config::from_env()?;
     let listen = config.listen_addr.clone();
 
-    let state = cold_start(&config).await.map_err(|e| {
-        format!("cold-start failed: {}", e)
-    })?;
+    let state = cold_start(&config)
+        .await
+        .map_err(|e| format!("cold-start failed: {}", e))?;
     let shared = Arc::new(state);
 
     let cors = CorsLayer::new()
@@ -45,7 +45,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         ]);
 
     let app = Router::new()
-        .route("/api/v1/buy-spl-token", get(buy_spl_token).options(cors_options))
+        .route(
+            "/api/v1/buy-spl-token",
+            get(buy_spl_token).options(cors_options),
+        )
         .route(
             "/api/v1/buy-spl-token/intent-contract",
             get(intent_contract).options(cors_options),
@@ -72,8 +75,9 @@ async fn buy_spl_token(
 }
 
 async fn intent_contract() -> impl IntoResponse {
-    let body = serde_json::to_string(&x402_buy_spl_token::intent_contract::intent_contract_document())
-        .unwrap_or_else(|_| "{}".to_string());
+    let body =
+        serde_json::to_string(&x402_buy_spl_token::intent_contract::intent_contract_document())
+            .unwrap_or_else(|_| "{}".to_string());
     (
         StatusCode::OK,
         [(axum::http::header::CONTENT_TYPE, "application/json")],
@@ -86,12 +90,18 @@ async fn cors_options() -> impl IntoResponse {
         StatusCode::NO_CONTENT,
         [
             (axum::http::header::ACCESS_CONTROL_ALLOW_ORIGIN, "*"),
-            (axum::http::header::ACCESS_CONTROL_ALLOW_METHODS, "GET, OPTIONS"),
+            (
+                axum::http::header::ACCESS_CONTROL_ALLOW_METHODS,
+                "GET, OPTIONS",
+            ),
             (
                 axum::http::header::ACCESS_CONTROL_ALLOW_HEADERS,
                 ALLOW_HEADERS,
             ),
-            (axum::http::header::HeaderName::from_static("access-control-max-age"), "86400"),
+            (
+                axum::http::header::HeaderName::from_static("access-control-max-age"),
+                "86400",
+            ),
         ],
     )
 }

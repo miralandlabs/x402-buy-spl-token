@@ -1,36 +1,31 @@
-//! Buy SPL Token catalog: parsing, validation, and on-chain decimals check.
+//! Token catalog for the x402 SPL-asset purchase reference seller.
 //!
-//! The catalog is a list of [`CatalogEntry`] items the Buy endpoint can sell.
-//! It is sourced (in priority order) from a Postgres `parameters` row and the
-//! `BUY_SPL_TOKEN_CATALOG_JSON` environment variable, then validated for
-//! self-consistency before the service starts serving requests.
+//! Each [`CatalogEntry`] describes **one listed product unit** (SKU): unit
+//! list prices for what the buyer pays (USDC via x402) and what the seller
+//! delivers (SPL tokens at `mint`) **per quantity=1 session**.
 //!
-//! # Validation steps
+//! # Reference semantics (v0.3 — unit list + seller-quoted session totals)
 //!
-//! 1. **Static (`parse_catalog_json`)**:
-//!    - `mint` parses as a base58 [`Pubkey`].
-//!    - `decimals` is in `[0, 18]`.
-//!    - `price_usdc_ui` is a positive decimal whose fractional-digit count
-//!      does not exceed `decimals`.
-//! 2. **On-chain (`TokenCatalog::validate_against_chain`)**:
-//!    - The on-chain `Mint` account at `mint` is fetched via the configured
-//!      RPC under `RetryPolicy`, and its decimals byte (offset 44) must match
-//!      the configured `decimals`.
+//! | Field | Role |
+//! |-------|------|
+//! | `price_usdc_ui` | **Unit x402 list price** — USDC human amount per unit (× 10^6 raw). |
+//! | `decimals` | **Mint metadata** — on-chain SPL decimals. |
+//! | `deliver_amount_ui` | **Unit deliverable** — SPL human amount per unit (× 10^`decimals` raw). |
 //!
-//! Each error variant of [`CatalogError`] carries enough context (notably the
-//! offending entry's `name` and the `mint` it pertains to) for an operator to
-//! locate the bad row in their config without grepping logs.
+//! The unpaid 402 **never** exposes unit prices as `accepts[].amount`. The
+//! seller scales unit list × request `quantity` into session totals (see
+//! [`crate::quote`]). Example unit row: pay `"0.42"` USDC, deliver `"1000"`
+//! tokens → `quantity=3` session quotes **1.26** USDC and **3000** tokens.
 //!
-//! # Why string-typed `price_usdc_ui`?
+//! # Validation
 //!
-//! Counting *fractional digits* requires preserving the literal the operator
-//! wrote. A JSON literal like `0.50` round-trips through `f64` and is emitted
-//! as `0.5`, silently dropping a fractional digit. We accept both string
-//! (`"0.50"`) and JSON-number forms, but operators who care about
-//! trailing-zero precision should pass strings.
+//! 1. Static: mint pubkey, `decimals ∈ [0,18]`, positive decimals, fractional
+//!    limits (`price_usdc_ui` ≤ 6 dp, `deliver_amount_ui` ≤ `decimals` dp).
+//! 2. On-chain: configured `decimals` matches mint account byte.
 
 use {
     crate::{
+        amounts::{self, AmountParseError, USDC_DECIMALS},
         db::ParametersDb,
         parameters,
         rpc_retry::{with_retry, RetryPolicy},
@@ -53,11 +48,12 @@ pub struct CatalogEntry {
     /// Configured decimals for the mint. Validated against on-chain decimals
     /// at cold start.
     pub decimals: u8,
-    /// Price expressed as USDC UI units (e.g. `"0.42"` for 0.42 USDC).
-    /// Stored as a string to preserve the operator's exact fractional-digit
-    /// shape; see module docs.
+    /// Unit list: x402 USDC human price per quantity=1 (e.g. `"0.42"` → 420_000 USDC raw).
     #[serde(deserialize_with = "deserialize_decimal_str")]
     pub price_usdc_ui: String,
+    /// Unit list: SPL human deliverable per quantity=1 at `mint`.
+    #[serde(deserialize_with = "deserialize_decimal_str")]
+    pub deliver_amount_ui: String,
     /// Operator-facing display name for this token. Echoed back in
     /// validation error messages so a misconfigured row is easy to find.
     pub name: String,
@@ -75,6 +71,16 @@ impl CatalogEntry {
             mint: self.mint.clone(),
             reason: e.to_string(),
         })
+    }
+
+    /// Unit USDC raw (catalog list price, not the x402 session total).
+    pub fn price_usdc_raw(&self) -> Result<u64, AmountParseError> {
+        amounts::ui_to_raw_units(&self.price_usdc_ui, USDC_DECIMALS)
+    }
+
+    /// Unit SPL raw (catalog list deliverable, not the session total).
+    pub fn deliver_amount_raw(&self) -> Result<u64, AmountParseError> {
+        amounts::ui_to_raw_units(&self.deliver_amount_ui, self.decimals as u32)
     }
 }
 
@@ -177,18 +183,32 @@ pub enum CatalogError {
     DecimalsOutOfRange { entry_name: String, decimals: u8 },
     /// `price_usdc_ui` is not strictly greater than zero.
     NonPositivePrice { entry_name: String, price: String },
+    /// `deliver_amount_ui` is not strictly greater than zero.
+    NonPositiveDeliverAmount { entry_name: String, amount: String },
     /// `price_usdc_ui` could not be parsed as a decimal at all.
     InvalidPrice {
         entry_name: String,
         price: String,
         reason: String,
     },
-    /// `price_usdc_ui` has more fractional digits than `decimals`.
-    FractionalOverflow {
+    /// `deliver_amount_ui` could not be parsed as a decimal at all.
+    InvalidDeliverAmount {
+        entry_name: String,
+        amount: String,
+        reason: String,
+    },
+    /// `price_usdc_ui` has more fractional digits than USDC allows (6).
+    PriceFractionalOverflow {
+        entry_name: String,
+        fractional_digits: usize,
+        price: String,
+    },
+    /// `deliver_amount_ui` has more fractional digits than `decimals`.
+    DeliverFractionalOverflow {
         entry_name: String,
         decimals: u8,
         fractional_digits: usize,
-        price: String,
+        amount: String,
     },
     /// Configured `decimals` does not match on-chain mint decimals.
     DecimalsMismatch {
@@ -238,6 +258,11 @@ impl fmt::Display for CatalogError {
                 "catalog entry {:?}: price_usdc_ui {:?} must be a positive decimal",
                 entry_name, price
             ),
+            Self::NonPositiveDeliverAmount { entry_name, amount } => write!(
+                f,
+                "catalog entry {:?}: deliver_amount_ui {:?} must be a positive decimal",
+                entry_name, amount
+            ),
             Self::InvalidPrice {
                 entry_name,
                 price,
@@ -247,15 +272,33 @@ impl fmt::Display for CatalogError {
                 "catalog entry {:?}: price_usdc_ui {:?} is not a valid decimal ({})",
                 entry_name, price, reason
             ),
-            Self::FractionalOverflow {
+            Self::InvalidDeliverAmount {
                 entry_name,
-                decimals,
+                amount,
+                reason,
+            } => write!(
+                f,
+                "catalog entry {:?}: deliver_amount_ui {:?} is not a valid decimal ({})",
+                entry_name, amount, reason
+            ),
+            Self::PriceFractionalOverflow {
+                entry_name,
                 fractional_digits,
                 price,
             } => write!(
                 f,
-                "catalog entry {:?}: price_usdc_ui {:?} has {} fractional digits, exceeds decimals={}",
-                entry_name, price, fractional_digits, decimals
+                "catalog entry {:?}: price_usdc_ui {:?} has {} fractional digits, exceeds USDC maximum of {}",
+                entry_name, price, fractional_digits, USDC_DECIMALS
+            ),
+            Self::DeliverFractionalOverflow {
+                entry_name,
+                decimals,
+                fractional_digits,
+                amount,
+            } => write!(
+                f,
+                "catalog entry {:?}: deliver_amount_ui {:?} has {} fractional digits, exceeds decimals={}",
+                entry_name, amount, fractional_digits, decimals
             ),
             Self::DecimalsMismatch {
                 entry_name,
@@ -352,31 +395,23 @@ fn validate_entry(entry: &CatalogEntry) -> Result<(), CatalogError> {
         });
     }
 
-    // 3. price_usdc_ui
-    let DecimalShape {
-        is_positive,
-        fractional_digits,
-    } = parse_decimal_shape(&entry.price_usdc_ui).map_err(|reason| CatalogError::InvalidPrice {
-        entry_name: entry.name.clone(),
-        price: entry.price_usdc_ui.clone(),
-        reason,
-    })?;
-    if !is_positive {
-        return Err(CatalogError::NonPositivePrice {
-            entry_name: entry.name.clone(),
-            price: entry.price_usdc_ui.clone(),
-        });
-    }
-    if fractional_digits as u32 > entry.decimals as u32 {
-        return Err(CatalogError::FractionalOverflow {
-            entry_name: entry.name.clone(),
-            decimals: entry.decimals,
-            fractional_digits,
-            price: entry.price_usdc_ui.clone(),
-        });
-    }
+    // 3. price_usdc_ui (x402 payment — USDC fractional limit)
+    validate_positive_decimal(
+        &entry.name,
+        &entry.price_usdc_ui,
+        USDC_DECIMALS as u8,
+        DecimalField::PriceUsdc,
+    )?;
 
-    // 4. sender_treasury_ata (optional, must still be valid base58 pubkey when present)
+    // 4. deliver_amount_ui (SPL deliverable — mint decimals limit)
+    validate_positive_decimal(
+        &entry.name,
+        &entry.deliver_amount_ui,
+        entry.decimals,
+        DecimalField::DeliverAmount,
+    )?;
+
+    // 5. sender_treasury_ata (optional, must still be valid base58 pubkey when present)
     if let Some(ata) = &entry.sender_treasury_ata {
         Pubkey::from_str(ata).map_err(|e| CatalogError::InvalidMint {
             entry_name: entry.name.clone(),
@@ -385,6 +420,62 @@ fn validate_entry(entry: &CatalogEntry) -> Result<(), CatalogError> {
         })?;
     }
 
+    Ok(())
+}
+
+enum DecimalField {
+    PriceUsdc,
+    DeliverAmount,
+}
+
+fn validate_positive_decimal(
+    entry_name: &str,
+    value: &str,
+    max_fractional_digits: u8,
+    field: DecimalField,
+) -> Result<(), CatalogError> {
+    let DecimalShape {
+        is_positive,
+        fractional_digits,
+    } = parse_decimal_shape(value).map_err(|reason| match field {
+        DecimalField::PriceUsdc => CatalogError::InvalidPrice {
+            entry_name: entry_name.to_string(),
+            price: value.to_string(),
+            reason,
+        },
+        DecimalField::DeliverAmount => CatalogError::InvalidDeliverAmount {
+            entry_name: entry_name.to_string(),
+            amount: value.to_string(),
+            reason,
+        },
+    })?;
+    if !is_positive {
+        return Err(match field {
+            DecimalField::PriceUsdc => CatalogError::NonPositivePrice {
+                entry_name: entry_name.to_string(),
+                price: value.to_string(),
+            },
+            DecimalField::DeliverAmount => CatalogError::NonPositiveDeliverAmount {
+                entry_name: entry_name.to_string(),
+                amount: value.to_string(),
+            },
+        });
+    }
+    if fractional_digits as u32 > max_fractional_digits as u32 {
+        return Err(match field {
+            DecimalField::PriceUsdc => CatalogError::PriceFractionalOverflow {
+                entry_name: entry_name.to_string(),
+                fractional_digits,
+                price: value.to_string(),
+            },
+            DecimalField::DeliverAmount => CatalogError::DeliverFractionalOverflow {
+                entry_name: entry_name.to_string(),
+                decimals: max_fractional_digits,
+                fractional_digits,
+                amount: value.to_string(),
+            },
+        });
+    }
     Ok(())
 }
 
@@ -496,12 +587,13 @@ mod tests {
     // USDC devnet mint, used as a second valid pubkey for ATA tests.
     const VALID_PUBKEY_2: &str = "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU";
 
-    fn entry_json(price: &str, decimals: u8) -> String {
+    fn entry_json(price_usdc: &str, deliver: &str, decimals: u8) -> String {
         format!(
-            r#"[{{"mint":"{mint}","decimals":{decimals},"price_usdc_ui":"{price}","name":"Merry Xmas"}}]"#,
+            r#"[{{"mint":"{mint}","decimals":{decimals},"price_usdc_ui":"{price_usdc}","deliver_amount_ui":"{deliver}","name":"Merry Xmas"}}]"#,
             mint = VALID_MINT,
             decimals = decimals,
-            price = price
+            price_usdc = price_usdc,
+            deliver = deliver
         )
     }
 
@@ -509,14 +601,17 @@ mod tests {
 
     #[test]
     fn happy_path_parses_and_validates() {
-        let json = entry_json("0.42", 6);
+        let json = entry_json("0.42", "1000", 6);
         let cat = parse_catalog_json(&json).expect("happy path should parse");
         assert_eq!(cat.len(), 1);
         let entry = &cat.entries()[0];
         assert_eq!(entry.mint, VALID_MINT);
         assert_eq!(entry.decimals, 6);
         assert_eq!(entry.price_usdc_ui, "0.42");
+        assert_eq!(entry.deliver_amount_ui, "1000");
         assert_eq!(entry.name, "Merry Xmas");
+        assert_eq!(entry.price_usdc_raw().unwrap(), 420_000);
+        assert_eq!(entry.deliver_amount_raw().unwrap(), 1_000_000_000);
         assert_eq!(entry.sender_treasury_ata, None);
         assert_eq!(
             cat.find_by_mint(VALID_MINT).map(|e| &e.name).unwrap(),
@@ -527,7 +622,7 @@ mod tests {
     #[test]
     fn happy_path_with_optional_sender_treasury_ata() {
         let json = format!(
-            r#"[{{"mint":"{mint}","decimals":6,"price_usdc_ui":"1","name":"X","sender_treasury_ata":"{ata}"}}]"#,
+            r#"[{{"mint":"{mint}","decimals":6,"price_usdc_ui":"1","deliver_amount_ui":"1","name":"X","sender_treasury_ata":"{ata}"}}]"#,
             mint = VALID_MINT,
             ata = VALID_PUBKEY_2
         );
@@ -541,7 +636,7 @@ mod tests {
     #[test]
     fn happy_path_accepts_json_number_for_price() {
         let json = format!(
-            r#"[{{"mint":"{}","decimals":2,"price_usdc_ui":1.5,"name":"X"}}]"#,
+            r#"[{{"mint":"{}","decimals":2,"price_usdc_ui":1.5,"deliver_amount_ui":"1","name":"X"}}]"#,
             VALID_MINT
         );
         let cat = parse_catalog_json(&json).unwrap();
@@ -550,7 +645,7 @@ mod tests {
 
     #[test]
     fn happy_path_integer_price_with_zero_decimals() {
-        let json = entry_json("3", 0);
+        let json = entry_json("3", "3", 0);
         let cat = parse_catalog_json(&json).unwrap();
         assert_eq!(cat.entries()[0].price_usdc_ui, "3");
     }
@@ -559,8 +654,7 @@ mod tests {
 
     #[test]
     fn invalid_mint_is_rejected_and_names_entry() {
-        let json =
-            r#"[{"mint":"not-a-real-mint","decimals":6,"price_usdc_ui":"1","name":"Bad Token"}]"#;
+        let json = r#"[{"mint":"not-a-real-mint","decimals":6,"price_usdc_ui":"1","deliver_amount_ui":"1","name":"Bad Token"}]"#;
         let err = parse_catalog_json(json).unwrap_err();
         match err {
             CatalogError::InvalidMint {
@@ -576,7 +670,7 @@ mod tests {
     #[test]
     fn invalid_sender_treasury_ata_is_rejected() {
         let json = format!(
-            r#"[{{"mint":"{}","decimals":6,"price_usdc_ui":"1","name":"X","sender_treasury_ata":"nope"}}]"#,
+            r#"[{{"mint":"{}","decimals":6,"price_usdc_ui":"1","deliver_amount_ui":"1","name":"X","sender_treasury_ata":"nope"}}]"#,
             VALID_MINT
         );
         let err = parse_catalog_json(&json).unwrap_err();
@@ -587,7 +681,7 @@ mod tests {
 
     #[test]
     fn decimals_above_18_rejected() {
-        let json = entry_json("1", 19);
+        let json = entry_json("1", "1", 19);
         let err = parse_catalog_json(&json).unwrap_err();
         match err {
             CatalogError::DecimalsOutOfRange {
@@ -604,10 +698,9 @@ mod tests {
     #[test]
     fn decimals_zero_and_eighteen_are_in_range() {
         // boundary inclusive at 0
-        parse_catalog_json(&entry_json("1", 0)).expect("decimals=0 ok");
-        // boundary inclusive at 18 (price has 18 fractional digits)
+        parse_catalog_json(&entry_json("1", "1", 0)).expect("decimals=0 ok");
         let json = format!(
-            r#"[{{"mint":"{}","decimals":18,"price_usdc_ui":"0.000000000000000001","name":"X"}}]"#,
+            r#"[{{"mint":"{}","decimals":18,"price_usdc_ui":"0.000001","deliver_amount_ui":"0.000000000000000001","name":"X"}}]"#,
             VALID_MINT
         );
         parse_catalog_json(&json).expect("decimals=18 ok");
@@ -617,40 +710,40 @@ mod tests {
 
     #[test]
     fn zero_price_is_rejected() {
-        let json = entry_json("0", 6);
+        let json = entry_json("0", "1", 6);
         let err = parse_catalog_json(&json).unwrap_err();
         assert!(matches!(err, CatalogError::NonPositivePrice { .. }));
     }
 
     #[test]
     fn zero_with_decimals_is_rejected() {
-        let json = entry_json("0.000000", 6);
+        let json = entry_json("0.000000", "1", 6);
         let err = parse_catalog_json(&json).unwrap_err();
         assert!(matches!(err, CatalogError::NonPositivePrice { .. }));
     }
 
     #[test]
     fn negative_price_is_rejected() {
-        let json = entry_json("-1.0", 6);
+        let json = entry_json("-1.0", "1", 6);
         let err = parse_catalog_json(&json).unwrap_err();
         assert!(matches!(err, CatalogError::NonPositivePrice { .. }));
     }
 
     #[test]
     fn malformed_price_is_rejected() {
-        let json = entry_json("abc", 6);
+        let json = entry_json("abc", "1", 6);
         let err = parse_catalog_json(&json).unwrap_err();
         assert!(matches!(err, CatalogError::InvalidPrice { .. }));
     }
 
-    // ---- fractional digits exceed decimals ----
+    // ---- fractional digits exceed limits ----
 
     #[test]
-    fn fractional_digits_exceeding_decimals_rejected() {
-        let json = entry_json("0.123", 2);
+    fn deliver_fractional_digits_exceeding_mint_decimals_rejected() {
+        let json = entry_json("1", "0.123", 2);
         let err = parse_catalog_json(&json).unwrap_err();
         match err {
-            CatalogError::FractionalOverflow {
+            CatalogError::DeliverFractionalOverflow {
                 entry_name,
                 decimals,
                 fractional_digits,
@@ -660,14 +753,23 @@ mod tests {
                 assert_eq!(decimals, 2);
                 assert_eq!(fractional_digits, 3);
             }
-            other => panic!("expected FractionalOverflow, got {:?}", other),
+            other => panic!("expected DeliverFractionalOverflow, got {:?}", other),
         }
     }
 
     #[test]
-    fn equal_fractional_digits_to_decimals_accepted() {
-        let cat = parse_catalog_json(&entry_json("0.42", 2)).unwrap();
-        assert_eq!(cat.entries()[0].price_usdc_ui, "0.42");
+    fn price_usdc_fractional_digits_beyond_six_rejected() {
+        let json = entry_json("0.1234567", "1", 6);
+        let err = parse_catalog_json(&json).unwrap_err();
+        assert!(matches!(err, CatalogError::PriceFractionalOverflow { .. }));
+    }
+
+    #[test]
+    fn independent_payment_and_deliver_amounts() {
+        let cat = parse_catalog_json(&entry_json("2", "1", 6)).unwrap();
+        let e = &cat.entries()[0];
+        assert_eq!(e.price_usdc_raw().unwrap(), 2_000_000);
+        assert_eq!(e.deliver_amount_raw().unwrap(), 1_000_000);
     }
 
     // ---- missing env / source priority ----
@@ -686,7 +788,7 @@ mod tests {
 
     #[test]
     fn env_only_loads_when_db_absent() {
-        let env = entry_json("0.5", 6);
+        let env = entry_json("0.5", "100", 6);
         let cat = load_from_strings(None, Some(&env)).unwrap();
         assert_eq!(cat.entries()[0].price_usdc_ui, "0.5");
     }
@@ -698,11 +800,11 @@ mod tests {
         // Env carries an entry with name "FromEnv", db carries "FromDb".
         // The loader must pick the DB version.
         let env = format!(
-            r#"[{{"mint":"{}","decimals":6,"price_usdc_ui":"1","name":"FromEnv"}}]"#,
+            r#"[{{"mint":"{}","decimals":6,"price_usdc_ui":"1","deliver_amount_ui":"1","name":"FromEnv"}}]"#,
             VALID_MINT
         );
         let db = format!(
-            r#"[{{"mint":"{}","decimals":6,"price_usdc_ui":"2","name":"FromDb"}}]"#,
+            r#"[{{"mint":"{}","decimals":6,"price_usdc_ui":"2","deliver_amount_ui":"2","name":"FromDb"}}]"#,
             VALID_MINT
         );
         let cat = load_from_strings(Some(&db), Some(&env)).unwrap();
@@ -712,7 +814,7 @@ mod tests {
 
     #[test]
     fn empty_db_value_falls_back_to_env() {
-        let env = entry_json("0.5", 6);
+        let env = entry_json("0.5", "100", 6);
         let cat = load_from_strings(Some(""), Some(&env)).unwrap();
         assert_eq!(cat.entries()[0].name, "Merry Xmas");
     }
@@ -735,10 +837,10 @@ mod tests {
 
     #[test]
     fn error_messages_name_offending_entry() {
-        let err = parse_catalog_json(&entry_json("0.123", 2)).unwrap_err();
+        let err = parse_catalog_json(&entry_json("1", "0.123", 2)).unwrap_err();
         let msg = err.to_string();
         assert!(msg.contains("Merry Xmas"), "msg={}", msg);
-        assert!(msg.contains("3 fractional digits"), "msg={}", msg);
+        assert!(msg.contains("deliver_amount_ui"), "msg={}", msg);
     }
 
     // ---- decimal shape parser unit coverage ----

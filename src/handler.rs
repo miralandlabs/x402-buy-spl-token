@@ -5,7 +5,7 @@
 //! - **Unpaid GET** (no `PAYMENT-SIGNATURE` header): returns HTTP 402 with a
 //!   server-built TransferSla committed to a registry. The `accepts[].extra`
 //!   carries `slaHash` / `slaUrl`, and the `amount` is the buyer's USDC
-//!   payment in raw units (price_usdc_ui × 10^6, USDC has 6 decimals).
+//!   payment in raw units (seller-quoted session total from [`crate::quote`]).
 //! - **Paid GET** (with `PAYMENT-SIGNATURE` header): not yet implemented in
 //!   this task (8.1). Subsequent tasks (8.2 → 8.4) fill in
 //!   verify-and-settle, SPL `TransferChecked`, evidence upload, and
@@ -19,21 +19,18 @@
 //! handler (see [`crate::api::handlers`]). Error bodies follow the
 //! `{ "error": { "code", "message" } }` shape required by Requirement 9.1.
 //!
-//! # USDC raw units
+//! # Payment vs deliverable (v0.3 — seller-quoted session totals)
 //!
-//! The 402 `amount` field carries the buyer's USDC payment as the integer
-//! count of raw USDC units. USDC has 6 decimals on every supported chain, so
-//! `price_usdc_ui` (a decimal string from the catalog) is converted by
-//! [`usdc_raw_units`] using exact integer arithmetic — no `f64` ever
-//! touches the raw-units boundary. A price string with more than 6
-//! fractional digits is rejected as a configuration error.
+//! Catalog rows are **unit list** prices. Optional query `quantity` (default
+//! `1`) selects how many units the buyer wants this session. The seller
+//! scales server-side into fixed session totals:
 //!
-//! Note that the SLA's `min_amount` is the *token* delivery amount
-//! (`price_usdc_ui × 10^token_decimals`), which is different from the USDC
-//! `amount` in the 402 line. The catalog stores `price_usdc_ui` with at most
-//! `token_decimals` fractional digits (validated at cold start), but USDC
-//! always has 6 decimals — so we apply the same fractional-digit check
-//! against 6 here.
+//! - **x402 payment:** `accepts[].amount` = session USDC raw (authoritative;
+//!   buyer MUST NOT compute unit × quantity client-side).
+//! - **SLA + transfer:** `commitMaterial.deliverAmountRaw` = session SPL raw.
+//!
+//! See [`crate::intent_contract`] and [`crate::quote`] for the ecosystem
+//! reference binding.
 
 use {
     crate::{
@@ -41,6 +38,7 @@ use {
         cors::ALLOW_HEADERS,
         orders::{LedgerError, OrderRecord, OrderState, TransitionFields},
         purchase_ledger::PurchaseLedger,
+        quote::{self, SessionQuote},
         registry_client::{
             AssertedTransfer, RegistryClient, RegistryClientError, TransferEvidenceBuilder,
             REGISTRY_BASE_URL, REGISTRY_BEARER_TOKEN,
@@ -67,11 +65,6 @@ use {
     vercel_runtime::{Body, Response, StatusCode as VercelStatusCode},
 };
 
-/// USDC has six decimals on every chain we support. Used by
-/// [`usdc_raw_units`] to convert `price_usdc_ui` from the catalog into the
-/// integer raw-units value that the 402 `amount` field expects.
-const USDC_DECIMALS: u32 = 6;
-
 /// USDC mint (devnet) — used as the `asset` of the 402 `accepts[]` line
 /// when the request is served against a devnet RPC. Mainnet uses
 /// [`USDC_MAINNET_MINT`].
@@ -95,6 +88,9 @@ struct BuyQuery {
     recipient_owner: Option<String>,
     #[serde(default)]
     buyer_nonce: Option<String>,
+    /// Line quantity (default 1). Seller quotes session totals in the 402.
+    #[serde(default)]
+    quantity: Option<String>,
 }
 
 /// Entry point for `GET /api/v1/buy-spl-token`. Detects the unpaid vs paid
@@ -150,6 +146,7 @@ pub async fn handle(
 /// catalog lookup. Lives only on the request stack — never persisted.
 struct ParsedRequest<'a> {
     entry: &'a CatalogEntry,
+    quote: SessionQuote,
     recipient_owner: String,
     buyer_nonce: String,
 }
@@ -160,46 +157,11 @@ async fn build_unpaid_402(
     parsed: &ParsedRequest<'_>,
 ) -> Response<Body> {
     let entry = parsed.entry;
+    let quote = &parsed.quote;
 
-    // (a) USDC raw units the 402 line will charge. Reject configuration
-    // errors (more than 6 fractional digits) as 500 — they are an operator
-    // mistake, not a buyer mistake. Cold-start already rejects entries with
-    // more fractional digits than the *token* decimals; this guard catches
-    // the rarer case where token decimals exceed 6 (and a fractional-rich
-    // price slipped through).
-    let usdc_amount_raw = match usdc_raw_units(&entry.price_usdc_ui) {
-        Ok(v) => v,
-        Err(e) => {
-            return error_response(
-                headers,
-                VercelStatusCode::INTERNAL_SERVER_ERROR,
-                "invalid_price",
-                format!(
-                    "catalog entry {:?} has price_usdc_ui {:?} that cannot be converted to USDC raw units: {}",
-                    entry.name, entry.price_usdc_ui, e
-                ),
-            );
-        }
-    };
-
-    // (b) Token raw units the SLA commits the seller to deliver:
-    //     price_units = price_usdc_ui * 10^token_decimals.
-    //     Cold-start guarantees fractional_digits ≤ token_decimals, so the
-    //     conversion is exact; we still validate to avoid trusting state.
-    let token_price_units = match price_to_raw_units(&entry.price_usdc_ui, entry.decimals as u32) {
-        Ok(v) => v,
-        Err(e) => {
-            return error_response(
-                headers,
-                VercelStatusCode::INTERNAL_SERVER_ERROR,
-                "invalid_price",
-                format!(
-                    "catalog entry {:?} price_usdc_ui {:?} cannot be expressed at decimals={}: {}",
-                    entry.name, entry.price_usdc_ui, entry.decimals, e
-                ),
-            );
-        }
-    };
+    // (a) Session USDC total for the 402 line — seller-quoted, x402-authoritative.
+    let usdc_amount_raw = quote.payment_amount_raw;
+    let deliver_amount_raw = quote.deliver_amount_raw;
 
     // (c) Seller pubkey. The buy endpoint requires a cold-started signer.
     let seller_signer = match state.seller_signer.as_ref() {
@@ -223,7 +185,7 @@ async fn build_unpaid_402(
     //
     // What we DO advertise here is everything the buyer needs to
     // reconstruct the SLA byte-identically:
-    //   - `tokenMint` / `tokenDecimals` / `tokenPriceUnits`
+    //   - `tokenMint` / `tokenDecimals` / `deliverAmountRaw` / `deliverAmountUi`
     //   - `recipientOwner` (echoed from the URL)
     //   - `buyerNonce` (echoed from the URL)
     //   - `sellerPubkey` (this deployment's hot signer)
@@ -283,22 +245,34 @@ async fn build_unpaid_402(
 
     // pr402's `build-sla-escrow-payment-tx` resolves `FundPayment.seller`
     // from `extra.beneficiary` (preferred) or `extra.merchantWallet`. That
-    // pubkey is what receives the USDC on `ReleasePayment`, so it MUST be
-    // the merchant identity / collection wallet — distinct from
-    // `seller_signer` (the hot key that signs `TransferChecked` and
-    // `SubmitDelivery` in this handler) and distinct from `pay_to` (the
-    // sla-escrow PDA, which is just an on-chain custody account).
-    //
-    // We resolve `merchantWallet` through the same parameters table so
-    // the value can be set per-endpoint. When unset we fall back to
-    // `pay_to` (preserves single-wallet preview deployments).
-    let merchant_wallet = crate::parameters::resolve_merchant_wallet(
+    // pubkey is what receives the USDC on `ReleasePayment` — the merchant
+    // collection wallet, distinct from `pay_to` (escrow PDA) and from
+    // `seller_signer` (hot delivery key). `merchant_signer` signs
+    // `SubmitDelivery` and must match fund-payment payout identity.
+    let merchant_wallet = match crate::parameters::resolve_merchant_wallet(
         state.db.as_deref(),
         crate::parameters::ENDPOINT_BUY_SPL_TOKEN,
     )
     .await
-    .or_else(|| state.config.x402_merchant_wallet.clone())
-    .unwrap_or_else(|| pay_to.clone());
+    .filter(|s| !s.is_empty())
+    {
+        Some(w) => w,
+        None => {
+            return error_response(
+                headers,
+                VercelStatusCode::INTERNAL_SERVER_ERROR,
+                "internal_error",
+                "X402_MERCHANT_WALLET / MERCHANT_WALLET not configured (parameters table or env)",
+            );
+        }
+    };
+
+    let beneficiary = crate::parameters::resolve_beneficiary(
+        state.db.as_deref(),
+        crate::parameters::ENDPOINT_BUY_SPL_TOKEN,
+    )
+    .await
+    .filter(|s| !s.is_empty());
 
     // Oracle allow-list emitted into `accepted.extra.oracleAuthorities`.
     // Accepts either a JSON array (`["pk1","pk2"]`) or a comma/whitespace-
@@ -312,7 +286,7 @@ async fn build_unpaid_402(
     )
     .await
     {
-        Some(raw) => parse_oracle_authorities(&raw),
+        Some(raw) => crate::parameters::parse_oracle_authorities(&raw),
         None => Vec::new(),
     };
     if oracle_authorities.is_empty() {
@@ -353,10 +327,17 @@ async fn build_unpaid_402(
     // resource).
     let cluster_str = cluster_name_for_network(&network);
     let commit_material = json!({
+        "quoteVersion": crate::intent_contract::QUOTE_VERSION,
+        "quantity": quote.quantity,
         "tokenMint": entry.mint,
         "tokenName": entry.name,
         "tokenDecimals": entry.decimals,
-        "tokenPriceUnits": token_price_units.to_string(),
+        "unitPaymentAmountRaw": quote.unit_payment_raw.to_string(),
+        "unitDeliverAmountRaw": quote.unit_deliver_raw.to_string(),
+        "unitDeliverAmountUi": entry.deliver_amount_ui,
+        "paymentAmountRaw": usdc_amount_raw.to_string(),
+        "deliverAmountUi": quote.deliver_amount_ui,
+        "deliverAmountRaw": deliver_amount_raw.to_string(),
         "recipientOwner": parsed.recipient_owner,
         "buyerNonce": parsed.buyer_nonce,
         "sellerPubkey": seller_signer.pubkey().to_string(),
@@ -364,7 +345,7 @@ async fn build_unpaid_402(
         "profileId": sla_builder::PROFILE_ID,
         "version": SLA_VERSION,
     });
-    let overlay = json!({
+    let mut overlay = json!({
         "merchantWallet": merchant_wallet,
         "oracleAuthorities": oracle_authorities,
         "intentContractUrl": crate::intent_contract::intent_contract_url_from_resource(&resource_url),
@@ -373,6 +354,12 @@ async fn build_unpaid_402(
         "profileId": sla_builder::PROFILE_ID,
         "commitMaterial": commit_material,
     });
+    if let Some(b) = beneficiary {
+        overlay
+            .as_object_mut()
+            .expect("overlay is object")
+            .insert("beneficiary".into(), json!(b));
+    }
     if let (Some(b), Some(o)) = (base_extra.as_object_mut(), overlay.as_object()) {
         for (k, v) in o {
             b.insert(k.clone(), v.clone());
@@ -634,21 +621,7 @@ async fn handle_paid_path(
     //     FundPayment. Mismatch must be caught **before** settlement
     //     (req 4.3) — otherwise the buyer's USDC would be moved to escrow
     //     against an SLA the seller never signed.
-    let token_price_units =
-        match price_to_raw_units(&parsed.entry.price_usdc_ui, parsed.entry.decimals as u32) {
-            Ok(v) => v,
-            Err(e) => {
-                return error_response(
-                    headers,
-                    VercelStatusCode::INTERNAL_SERVER_ERROR,
-                    "invalid_price",
-                    format!(
-                    "catalog entry {:?} price_usdc_ui {:?} cannot be expressed at decimals={}: {}",
-                    parsed.entry.name, parsed.entry.price_usdc_ui, parsed.entry.decimals, e
-                ),
-                );
-            }
-        };
+    let deliver_amount_raw = parsed.quote.deliver_amount_raw;
     let seller_signer = match state.seller_signer.as_ref() {
         Some(s) => s.clone(),
         None => {
@@ -663,7 +636,7 @@ async fn handle_paid_path(
     let sla_inputs = TransferSlaInputs {
         mint: parsed.entry.mint.clone(),
         decimals: parsed.entry.decimals,
-        price_units: token_price_units,
+        deliver_amount_raw,
         recipient_owner: parsed.recipient_owner.clone(),
         buyer_nonce: parsed.buyer_nonce.clone(),
         // Bind the recomputed SLA to the on-chain `Payment` the buyer
@@ -899,7 +872,7 @@ async fn run_paid_under_lock(ctx: &PaidLockCtx<'_>) -> Result<Response<Body>, Le
 
             // (i) Build the evidence document the seller will commit to.
             //     The shape is purely a function of (transfer_signature,
-            //     payment_uid, mint, recipient_owner, price_units), so
+            //     payment_uid, mint, recipient_owner, deliver_amount_raw), so
             //     the same `delivery_hash` is reproduced on a resume.
             let transfer_signature = record_after_transfer
                 .transfer_signature
@@ -910,6 +883,7 @@ async fn run_paid_under_lock(ctx: &PaidLockCtx<'_>) -> Result<Response<Body>, Le
                 )))?;
             let evidence = match build_transfer_evidence(
                 parsed.entry,
+                parsed.quote.deliver_amount_raw,
                 &parsed.recipient_owner,
                 payment_uid_hex,
                 &parsed.buyer_nonce,
@@ -1057,8 +1031,7 @@ fn sentinel_settled_ok() -> Response<Body> {
 
 /// Run the SPL `TransferChecked` step of the paid path:
 ///
-/// 1. Compute `price_units = price_usdc_ui * 10^decimals` using exact
-///    integer arithmetic (no `f64`).
+/// 1. Resolve `deliver_amount_raw` from catalog (`deliver_amount_ui` × 10^decimals).
 /// 2. Resolve the source ATA: catalog `sender_treasury_ata` wins;
 ///    otherwise derive the seller's ATA for the configured mint.
 /// 3. Derive the buyer's destination ATA owned by `recipient_owner`,
@@ -1095,25 +1068,8 @@ async fn do_spl_transfer(
         })?
         .clone();
 
-    // (b) Compute price_units in raw token units using exact integer
-    //     arithmetic. Cold-start already guarantees the conversion is
-    //     exact; the guard here is defense-in-depth.
-    let price_units =
-        price_to_raw_units(&entry.price_usdc_ui, entry.decimals as u32).map_err(|e| {
-            warn!(
-                target: "server_log",
-                payment_uid = %payment_uid_hex,
-                entry_name = %entry.name,
-                price = %entry.price_usdc_ui,
-                decimals = entry.decimals,
-                error = %e,
-                "buy-spl-token: price_to_raw_units rejected at transfer step"
-            );
-            Box::new(internal_error(format!(
-                "catalog entry {:?} price_usdc_ui {:?} cannot be expressed at decimals={}: {}",
-                entry.name, entry.price_usdc_ui, entry.decimals, e
-            )))
-        })?;
+    // (b) Session deliverable raw from seller quote (quantity-scaled).
+    let deliver_amount_raw = parsed.quote.deliver_amount_raw;
 
     // (c) Parse the configured mint and the recipient owner.
     let mint_pk = Pubkey::from_str(&entry.mint).map_err(|e| {
@@ -1169,7 +1125,7 @@ async fn do_spl_transfer(
         &dest_ata,
         &seller_pubkey,
         &[],
-        price_units,
+        deliver_amount_raw,
         entry.decimals,
     )
     .map_err(|e| {
@@ -1218,7 +1174,7 @@ async fn do_spl_transfer(
             );
             // Mark the row failed; on DB failure we still want to surface the
             // 502 so the buyer is told the transfer never landed.
-            if let Err(db_err) = ledger.mark_failed( payment_uid_hex, "transfer").await {
+            if let Err(db_err) = ledger.mark_failed(payment_uid_hex, "transfer").await {
                 warn!(
                     target: "server_log",
                     payment_uid = %payment_uid_hex,
@@ -1245,7 +1201,7 @@ async fn do_spl_transfer(
         signature = %signature,
         source_ata = %source_ata,
         dest_ata = %dest_ata,
-        price_units,
+        deliver_amount_raw,
         decimals = entry.decimals,
         "buy-spl-token transfer_checked landed"
     );
@@ -1254,13 +1210,14 @@ async fn do_spl_transfer(
     //     retry won the race and already wrote a `transfer_signature`;
     //     we honor the persisted value rather than overwriting it.
     let signature_str = signature.to_string();
-    let transition_outcome = ledger.transition(
-        payment_uid_hex,
-        OrderState::PendingTransfer,
-        OrderState::TransferLanded,
-        &TransitionFields::new().with_transfer_signature(signature_str.clone()),
-    )
-    .await;
+    let transition_outcome = ledger
+        .transition(
+            payment_uid_hex,
+            OrderState::PendingTransfer,
+            OrderState::TransferLanded,
+            &TransitionFields::new().with_transfer_signature(signature_str.clone()),
+        )
+        .await;
 
     match transition_outcome {
         Ok(()) => {}
@@ -1294,7 +1251,7 @@ async fn do_spl_transfer(
 
     // (h) Re-load so the caller sees the persisted `transfer_signature`
     //     (ours, or the racing winner's).
-    match ledger.load( payment_uid_hex).await {
+    match ledger.load(payment_uid_hex).await {
         Ok(Some(record)) => Ok(record),
         Ok(None) => Err(Box::new(internal_error(format!(
             "purchase_orders row vanished for payment_uid={:?} after transfer",
@@ -1393,7 +1350,7 @@ fn sla_escrow_payment_pda(program_id: &Pubkey, payment_uid: &[u8; 32], bank: &Pu
 /// Layout assumed (from `sla-escrow-api::instruction`):
 ///
 /// - **Accounts**:
-///   1. `caller` — seller signer (writable, signer)
+///   1. `caller` — merchant payout signer (`payment.seller`, writable, signer)
 ///   2. `bank` — bank PDA (read-only)
 ///   3. `config` — config PDA (read-only)
 ///   4. `escrow` — per-mint escrow PDA (read-only)
@@ -1441,20 +1398,13 @@ fn submit_delivery_ix(
 /// happens when a required field is empty — a wiring bug).
 fn build_transfer_evidence(
     entry: &CatalogEntry,
+    deliver_amount_raw: u64,
     recipient_owner: &str,
     payment_uid_hex: &str,
     buyer_nonce: &str,
     transfer_signature: &str,
 ) -> Result<crate::registry_client::TransferEvidence, Box<Response<Body>>> {
-    let claimed_delta = match price_to_raw_units(&entry.price_usdc_ui, entry.decimals as u32) {
-        Ok(v) => v.to_string(),
-        Err(e) => {
-            return Err(Box::new(internal_error(format!(
-                "catalog entry {:?} price_usdc_ui {:?} cannot be expressed at decimals={}: {}",
-                entry.name, entry.price_usdc_ui, entry.decimals, e
-            ))));
-        }
-    };
+    let claimed_delta = deliver_amount_raw.to_string();
     let submitted_at = Utc::now().timestamp();
 
     TransferEvidenceBuilder::new()
@@ -1517,7 +1467,7 @@ async fn do_upload_evidence(
                 errors = ?errors,
                 "buy-spl-token evidence schema validation failed; marking order failed"
             );
-            if let Err(db_err) = ledger.mark_failed( payment_uid_hex, "evidence").await {
+            if let Err(db_err) = ledger.mark_failed(payment_uid_hex, "evidence").await {
                 warn!(
                     target: "server_log",
                     payment_uid = %payment_uid_hex,
@@ -1581,13 +1531,14 @@ async fn do_upload_evidence(
     };
 
     let evidence_url_str = evidence_url.as_str().to_string();
-    let transition_outcome = ledger.transition(
-        payment_uid_hex,
-        OrderState::TransferLanded,
-        OrderState::DeliverySubmitted,
-        &TransitionFields::new().with_evidence_url(evidence_url_str.clone()),
-    )
-    .await;
+    let transition_outcome = ledger
+        .transition(
+            payment_uid_hex,
+            OrderState::TransferLanded,
+            OrderState::DeliverySubmitted,
+            &TransitionFields::new().with_evidence_url(evidence_url_str.clone()),
+        )
+        .await;
 
     match transition_outcome {
         Ok(()) => {}
@@ -1619,7 +1570,7 @@ async fn do_upload_evidence(
 
     // Re-load so the caller sees the persisted `evidence_url` (ours, or
     // the racing winner's).
-    match ledger.load( payment_uid_hex).await {
+    match ledger.load(payment_uid_hex).await {
         Ok(Some(record)) => Ok(record),
         Ok(None) => Err(Box::new(internal_error(format!(
             "purchase_orders row vanished for payment_uid={:?} after evidence upload",
@@ -1635,10 +1586,10 @@ async fn do_upload_evidence(
 /// Run the SubmitDelivery step of the paid path:
 ///
 /// 1. Resolve the SLA-Escrow program id from env (fallback: mainnet).
-/// 2. Build the SubmitDelivery instruction (caller = seller, mint =
-///    catalog mint, payment_uid PDA derived from the buyer's raw
+/// 2. Build the SubmitDelivery instruction (caller = merchant payout key, mint =
+///    USDC escrow mint, payment_uid PDA derived from the buyer's raw
 ///    32-byte `payment_uid`, data = `[5, delivery_hash]`).
-/// 3. Fetch a fresh blockhash, sign with the seller key, submit under
+/// 3. Fetch a fresh blockhash, sign with the merchant key, submit under
 ///    the configured retry policy.
 /// 4. On confirmation transition `delivery_submitted → completed`
 ///    storing `delivery_signature`. On terminal failure mark the row
@@ -1652,12 +1603,12 @@ async fn do_submit_delivery(
     delivery_hash: [u8; 32],
 ) -> Result<OrderRecord, Box<Response<Body>>> {
     let _entry = parsed.entry;
-    let seller = state
-        .seller_signer
+    let merchant = state
+        .merchant_signer
         .as_ref()
         .ok_or_else(|| {
             Box::new(internal_error(
-                "buy endpoint not initialized (seller signer missing)",
+                "buy endpoint not initialized (merchant signer missing)",
             ))
         })?
         .clone();
@@ -1680,10 +1631,10 @@ async fn do_submit_delivery(
         )))
     })?;
 
-    let seller_pubkey = seller.pubkey();
+    let merchant_pubkey = merchant.pubkey();
     let ix = submit_delivery_ix(
         program_id,
-        seller_pubkey,
+        merchant_pubkey,
         mint_pk,
         payment_uid_raw,
         delivery_hash,
@@ -1692,14 +1643,14 @@ async fn do_submit_delivery(
 
     let retry_policy = RetryPolicy::from_env();
     let rpc = state.rpc_client.clone();
-    let keypair = seller.keypair();
+    let keypair = merchant.keypair();
     let label = "buy_spl_token::submit_delivery";
 
     let submit_outcome = with_retry(retry_policy, label, Some(payment_uid_hex), || {
         let rpc = rpc.clone();
         let keypair = keypair.clone();
         let instructions = instructions.clone();
-        let payer = seller_pubkey;
+        let payer = merchant_pubkey;
         async move {
             let recent_blockhash = rpc.get_latest_blockhash().await?;
             let tx = Transaction::new_signed_with_payer(
@@ -1723,8 +1674,7 @@ async fn do_submit_delivery(
                 error = %e,
                 "buy-spl-token submit_delivery exhausted retries; marking order failed"
             );
-            if let Err(db_err) = ledger.mark_failed( payment_uid_hex, "submit_delivery").await
-            {
+            if let Err(db_err) = ledger.mark_failed(payment_uid_hex, "submit_delivery").await {
                 warn!(
                     target: "server_log",
                     payment_uid = %payment_uid_hex,
@@ -1754,13 +1704,14 @@ async fn do_submit_delivery(
     );
 
     let signature_str = signature.to_string();
-    let transition_outcome = ledger.transition(
-        payment_uid_hex,
-        OrderState::DeliverySubmitted,
-        OrderState::Completed,
-        &TransitionFields::new().with_delivery_signature(signature_str.clone()),
-    )
-    .await;
+    let transition_outcome = ledger
+        .transition(
+            payment_uid_hex,
+            OrderState::DeliverySubmitted,
+            OrderState::Completed,
+            &TransitionFields::new().with_delivery_signature(signature_str.clone()),
+        )
+        .await;
 
     match transition_outcome {
         Ok(()) => {}
@@ -1787,7 +1738,7 @@ async fn do_submit_delivery(
         }
     }
 
-    match ledger.load( payment_uid_hex).await {
+    match ledger.load(payment_uid_hex).await {
         Ok(Some(record)) => Ok(record),
         Ok(None) => Err(Box::new(internal_error(format!(
             "purchase_orders row vanished for payment_uid={:?} after submit_delivery",
@@ -1968,8 +1919,37 @@ fn validate_request<'s>(
         }
     };
 
+    let quantity = match quote::parse_quantity(params.quantity.as_deref()) {
+        Ok(q) => q,
+        Err(e) => {
+            return Err(Box::new(error_response_with_details(
+                &HeaderMap::new(),
+                VercelStatusCode::BAD_REQUEST,
+                "invalid_parameter",
+                format!("query parameter 'quantity': {}", e),
+                json!({ "parameter": "quantity" }),
+            )));
+        }
+    };
+
+    let session_quote = match entry.session_quote(quantity) {
+        Ok(q) => q,
+        Err(e) => {
+            return Err(Box::new(error_response(
+                &HeaderMap::new(),
+                VercelStatusCode::INTERNAL_SERVER_ERROR,
+                "invalid_quote",
+                format!(
+                    "catalog entry {:?} cannot produce a session quote for quantity {}: {}",
+                    entry.name, quantity, e
+                ),
+            )));
+        }
+    };
+
     Ok(ParsedRequest {
         entry,
+        quote: session_quote,
         recipient_owner: recipient_owner.to_string(),
         buyer_nonce: buyer_nonce.to_string(),
     })
@@ -1985,110 +1965,6 @@ fn extract_payment_header(headers: &HeaderMap) -> Option<String> {
         .or_else(|| headers.get("PAYMENT-SIGNATURE"))
         .and_then(|v| v.to_str().ok())
         .map(|s| s.to_string())
-}
-
-// ---------------------------------------------------------------------------
-// USDC raw units
-// ---------------------------------------------------------------------------
-
-/// Failure modes of [`usdc_raw_units`] / [`price_to_raw_units`].
-#[derive(Debug, Clone, PartialEq, Eq)]
-enum PriceParseError {
-    Empty,
-    InvalidChar(char),
-    MultipleDots,
-    NoDigits,
-    TooManyFractionalDigits { digits: usize, allowed: u32 },
-    Overflow,
-    NotPositive,
-}
-
-impl std::fmt::Display for PriceParseError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::Empty => f.write_str("empty price"),
-            Self::InvalidChar(c) => write!(f, "invalid character {:?}", c),
-            Self::MultipleDots => f.write_str("multiple decimal points"),
-            Self::NoDigits => f.write_str("no digits"),
-            Self::TooManyFractionalDigits { digits, allowed } => write!(
-                f,
-                "{} fractional digits exceeds the allowed maximum of {}",
-                digits, allowed
-            ),
-            Self::Overflow => f.write_str("price overflows u64 raw units"),
-            Self::NotPositive => f.write_str("price must be strictly greater than zero"),
-        }
-    }
-}
-
-/// Convert a USDC price (decimal-string UI form) into raw USDC units (×
-/// 10^6) using exact integer arithmetic.
-///
-/// Accepts shapes like `"1"`, `"0.5"`, `"0.500000"`, `"42.42"`. Rejects
-/// negative numbers, signs, exponents, whitespace, multiple decimal points,
-/// and strings with more than 6 fractional digits.
-fn usdc_raw_units(price: &str) -> Result<u64, PriceParseError> {
-    price_to_raw_units(price, USDC_DECIMALS)
-}
-
-/// Generalized form of [`usdc_raw_units`] for arbitrary `decimals` ≤ 18.
-/// Used both for USDC raw (decimals = 6) and for the SLA's token side
-/// (decimals = catalog entry's `decimals`).
-fn price_to_raw_units(price: &str, decimals: u32) -> Result<u64, PriceParseError> {
-    if price.is_empty() {
-        return Err(PriceParseError::Empty);
-    }
-    // Reject leading sign — negative prices are invalid; positive sign is
-    // unnecessary and only complicates parsing.
-    if matches!(price.as_bytes()[0], b'+' | b'-') {
-        return Err(PriceParseError::InvalidChar(price.chars().next().unwrap()));
-    }
-
-    // Split on the (at most one) decimal point.
-    let mut parts = price.splitn(2, '.');
-    let integer_part = parts.next().unwrap_or("");
-    let fractional_part = parts.next().unwrap_or("");
-    if price.matches('.').count() > 1 {
-        return Err(PriceParseError::MultipleDots);
-    }
-    if integer_part.is_empty() && fractional_part.is_empty() {
-        return Err(PriceParseError::NoDigits);
-    }
-
-    // Validate digit-only content.
-    for ch in integer_part.chars().chain(fractional_part.chars()) {
-        if !ch.is_ascii_digit() {
-            return Err(PriceParseError::InvalidChar(ch));
-        }
-    }
-
-    // Fractional-digit count must not exceed `decimals` — the conversion
-    // would otherwise lose precision.
-    if (fractional_part.len() as u32) > decimals {
-        return Err(PriceParseError::TooManyFractionalDigits {
-            digits: fractional_part.len(),
-            allowed: decimals,
-        });
-    }
-
-    // Pad the fractional part to exactly `decimals` digits, then concat.
-    let pad = (decimals as usize).saturating_sub(fractional_part.len());
-    let mut combined = String::with_capacity(integer_part.len() + decimals as usize);
-    if integer_part.is_empty() {
-        combined.push('0');
-    } else {
-        combined.push_str(integer_part);
-    }
-    combined.push_str(fractional_part);
-    for _ in 0..pad {
-        combined.push('0');
-    }
-
-    let raw: u64 = combined.parse().map_err(|_| PriceParseError::Overflow)?;
-    if raw == 0 {
-        return Err(PriceParseError::NotPositive);
-    }
-    Ok(raw)
 }
 
 // ---------------------------------------------------------------------------
@@ -2172,35 +2048,6 @@ async fn facilitator_sla_escrow_extra(
         .extra
         .clone()
         .unwrap_or_else(|| serde_json::Value::Object(Default::default())))
-}
-
-/// Parse the `ORACLE_AUTHORITIES` parameter into a list of pubkeys.
-///
-/// Accepts either a JSON array of strings or a comma- / whitespace-
-/// separated list. Empty inputs yield an empty Vec; invalid pubkeys are
-/// silently dropped (the whole list is logged when empty so operators
-/// can spot a copy-paste error).
-fn parse_oracle_authorities(raw: &str) -> Vec<String> {
-    let trimmed = raw.trim();
-    if trimmed.is_empty() {
-        return Vec::new();
-    }
-    // JSON array path.
-    if trimmed.starts_with('[') {
-        if let Ok(arr) = serde_json::from_str::<Vec<String>>(trimmed) {
-            return arr
-                .into_iter()
-                .map(|s| s.trim().to_string())
-                .filter(|s| !s.is_empty())
-                .collect();
-        }
-    }
-    // CSV / whitespace path.
-    trimmed
-        .split(|c: char| c == ',' || c.is_whitespace())
-        .map(|s| s.trim().to_string())
-        .filter(|s| !s.is_empty())
-        .collect()
 }
 
 fn map_sla_builder_error_to_500(headers: &HeaderMap, e: SlaBuilderError) -> Response<Body> {
@@ -2301,93 +2148,6 @@ fn error_response_with_details(
 mod tests {
     use super::*;
 
-    // --- usdc_raw_units / price_to_raw_units ----------------------------
-
-    #[test]
-    fn usdc_raw_units_basic() {
-        assert_eq!(usdc_raw_units("1").unwrap(), 1_000_000);
-        assert_eq!(usdc_raw_units("0.5").unwrap(), 500_000);
-        assert_eq!(usdc_raw_units("0.500000").unwrap(), 500_000);
-        assert_eq!(usdc_raw_units("0.000001").unwrap(), 1);
-        assert_eq!(usdc_raw_units("42.42").unwrap(), 42_420_000);
-    }
-
-    #[test]
-    fn usdc_raw_units_rejects_too_many_fractional_digits() {
-        let err = usdc_raw_units("0.1234567").unwrap_err();
-        match err {
-            PriceParseError::TooManyFractionalDigits { digits, allowed } => {
-                assert_eq!(digits, 7);
-                assert_eq!(allowed, 6);
-            }
-            other => panic!("expected TooManyFractionalDigits, got {:?}", other),
-        }
-    }
-
-    #[test]
-    fn usdc_raw_units_rejects_negative_and_signs() {
-        assert!(matches!(
-            usdc_raw_units("-1").unwrap_err(),
-            PriceParseError::InvalidChar('-')
-        ));
-        assert!(matches!(
-            usdc_raw_units("+1").unwrap_err(),
-            PriceParseError::InvalidChar('+')
-        ));
-    }
-
-    #[test]
-    fn usdc_raw_units_rejects_zero() {
-        assert!(matches!(
-            usdc_raw_units("0").unwrap_err(),
-            PriceParseError::NotPositive
-        ));
-        assert!(matches!(
-            usdc_raw_units("0.000000").unwrap_err(),
-            PriceParseError::NotPositive
-        ));
-    }
-
-    #[test]
-    fn usdc_raw_units_rejects_malformed() {
-        assert!(matches!(
-            usdc_raw_units("").unwrap_err(),
-            PriceParseError::Empty
-        ));
-        assert!(matches!(
-            usdc_raw_units("abc").unwrap_err(),
-            PriceParseError::InvalidChar('a')
-        ));
-        assert!(matches!(
-            usdc_raw_units("1.2.3").unwrap_err(),
-            PriceParseError::MultipleDots
-        ));
-        assert!(matches!(
-            usdc_raw_units("1e6").unwrap_err(),
-            PriceParseError::InvalidChar('e')
-        ));
-    }
-
-    #[test]
-    fn price_to_raw_units_at_decimals_zero() {
-        assert_eq!(price_to_raw_units("3", 0).unwrap(), 3);
-        assert!(matches!(
-            price_to_raw_units("3.5", 0).unwrap_err(),
-            PriceParseError::TooManyFractionalDigits { .. }
-        ));
-    }
-
-    #[test]
-    fn price_to_raw_units_token_decimals() {
-        // 0.42 token at decimals=6 -> 420_000 raw token units.
-        assert_eq!(price_to_raw_units("0.42", 6).unwrap(), 420_000);
-        // 1 token at decimals=18 -> 10^18 raw — fits in u64? 10^18 < 2^64.
-        assert_eq!(
-            price_to_raw_units("1", 18).unwrap(),
-            1_000_000_000_000_000_000
-        );
-    }
-
     // --- query validation helpers --------------------------------------
 
     #[test]
@@ -2472,7 +2232,7 @@ mod tests {
         assert_eq!(
             h.get("Access-Control-Allow-Headers")
                 .and_then(|v| v.to_str().ok()),
-            Some(BALANCE_CORS_ALLOW_HEADERS),
+            Some(crate::cors::ALLOW_HEADERS),
             "error response must carry the same Access-Control-Allow-Headers as check_balance"
         );
     }

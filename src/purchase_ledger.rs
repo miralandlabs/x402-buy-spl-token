@@ -51,9 +51,7 @@ impl PurchaseLedger {
         fields: &TransitionFields,
     ) -> Result<(), LedgerError> {
         match self {
-            Self::Postgres(pool) => {
-                orders::transition(pool, payment_uid, from, to, fields).await
-            }
+            Self::Postgres(pool) => orders::transition(pool, payment_uid, from, to, fields).await,
             Self::Memory(store) => store.transition(payment_uid, from, to, fields).await,
         }
     }
@@ -79,7 +77,11 @@ impl PurchaseLedger {
             Self::Postgres(pool) => {
                 orders::with_advisory_lock(pool, payment_uid, timeout_budget, f).await
             }
-            Self::Memory(store) => store.with_advisory_lock(payment_uid, timeout_budget, f).await,
+            Self::Memory(store) => {
+                store
+                    .with_advisory_lock(payment_uid, timeout_budget, f)
+                    .await
+            }
         }
     }
 }
