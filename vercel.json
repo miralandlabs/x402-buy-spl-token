@@ -1,0 +1,57 @@
+{
+    "version": 2,
+    "builds": [
+        {
+            "src": "src/bin/buy_spl_token_api.rs",
+            "use": "vercel-rust@4.0.8",
+            "config": {
+                "env": {
+                    "CARGO_HOME": "/tmp/cargo",
+                    "RUSTUP_HOME": "/tmp/rustup"
+                }
+            }
+        },
+        {
+            "src": "public/**/*",
+            "use": "@vercel/static"
+        }
+    ],
+    "routes": [
+        {
+            "src": "/health",
+            "dest": "/src/bin/buy_spl_token_api",
+            "methods": ["GET", "HEAD", "OPTIONS"]
+        },
+        {
+            "src": "/api/v1/buy-spl-token/catalog",
+            "dest": "/src/bin/buy_spl_token_api",
+            "methods": ["GET", "HEAD", "OPTIONS"]
+        },
+        {
+            "src": "/api/v1/buy-spl-token/intent-contract",
+            "dest": "/src/bin/buy_spl_token_api",
+            "methods": ["GET", "HEAD", "OPTIONS"]
+        },
+        {
+            "src": "/api/v1/buy-spl-token",
+            "dest": "/src/bin/buy_spl_token_api",
+            "methods": ["GET", "HEAD", "OPTIONS"]
+        },
+        {
+            "src": "/wallet.js",
+            "dest": "/public/wallet.js"
+        },
+        {
+            "src": "/assets/(.*)",
+            "dest": "/public/assets/$1"
+        },
+        {
+            "src": "/(.*\\.(css|js|svg|png|jpg|jpeg|webp|ico|woff2|woff|ttf))",
+            "dest": "/public/$1"
+        },
+        {
+            "src": "/(.*)",
+            "dest": "/public/index.html"
+        }
+    ]
+}

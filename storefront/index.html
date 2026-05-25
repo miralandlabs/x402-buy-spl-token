@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Buy SPL Token · x402</title>
+    <meta
+      name="description"
+      content="Human-friendly SPL token shop powered by x402 SLA-Escrow. Simple, elegant, on-chain."
+    />
+    <script>
+      (function () {
+        var k = "x402-storefront-theme";
+        var t = null;
+        try {
+          t = localStorage.getItem(k);
+        } catch (e) {}
+        document.documentElement.setAttribute("data-theme", t === "light" ? "light" : "dark");
+      })();
+    </script>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="/src/theme.css" />
+    <link rel="stylesheet" href="/src/app.css" />
+  </head>
+  <body>
+    <div id="app"></div>
+    <div id="miracle-wallet-adapter" aria-hidden="true"></div>
+    <script src="/wallet.js" defer></script>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

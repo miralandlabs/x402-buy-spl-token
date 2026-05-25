@@ -97,12 +97,76 @@ Paid request: retry with `PAYMENT-SIGNATURE` after signing `FundPayment` via pr4
 
 Set `DATABASE_ENABLED=true` and `DATABASE_URL=...` for durable `purchase_orders` idempotency and `parameters` overrides.
 
+## Devnet end-to-end test
+
+```bash
+./scripts/test-buy-spl-token-devnet.sh
+```
+
+See [`docs/BUY-SPL-TOKEN-DEVNET-TEST.md`](docs/BUY-SPL-TOKEN-DEVNET-TEST.md) for prerequisites, env overrides, and failure modes. Defaults target the preview seller at `https://preview.spl-token.hashspace.me` and pr402 at `https://preview.agent.pay402.me` (same deployment as `https://preview.ipay.sh`).
+
+Deploy to Vercel with the included [`vercel.json`](vercel.json) (Rust entry: `src/bin/buy_spl_token_api.rs` + static `public/` from the storefront build).
+
+## CI / CD (GitHub Actions → Vercel)
+
+Pushes to any branch run [`.github/workflows/build-and-deploy.yml`](.github/workflows/build-and-deploy.yml):
+
+1. **CI:** `cargo fmt`, `clippy -D warnings`, `cargo test`
+2. **Storefront (once):** `npm run build:storefront` → `public/` (`index.html`, `assets/`, `wallet.js`). Not in `vercel.json` — GitHub Actions (or manual deploy) owns this step.
+3. **Deploy:** `vercel pull` → `vercel build` (Rust only; static files from step 2) → `vercel deploy --prebuilt` (CLI pinned to `52.2.1`, same as pr402)
+
+| Branch | Vercel environment | Typical custom domain |
+|--------|-------------------|------------------------|
+| `main` | production | `https://spl-token.hashspace.me` |
+| other  | preview    | `https://preview.spl-token.hashspace.me` |
+
+**Repository secrets** (GitHub → Settings → Secrets → Actions):
+
+| Secret | Purpose |
+|--------|---------|
+| `VERCEL_TOKEN` | Vercel API token |
+| `ORG_ID` | Vercel team/org id |
+| `PROJECT_ID` | Vercel project id for this seller |
+
+Solana / catalog env vars (`X402_NETWORK`, `BUY_SPL_TOKEN_CATALOG_JSON`, keypairs, etc.) stay in the **Vercel project** per environment (Preview vs Production), not in GitHub.
+
+Manual deploy (without Actions): `npm run build:storefront && vercel build && vercel deploy --prebuilt`.
+
+## Human storefront
+
+A **Vite + TypeScript** shop at `/` proves x402 works for humans, not only agents. Emerald theme (fair-portal palette), wallet connect (Solana wallet-adapter), on-chain Metaplex metadata + seller ATA inventory, and the same **sla-escrow buyer-commit** flow as agents.
+
+**Cluster-aware:** preview deployment (`preview.spl-token.hashspace.me`) uses Devnet env; production uses Mainnet. The UI reads `network`, `cluster`, and `facilitatorUrl` from `GET /api/v1/buy-spl-token/catalog` — never hardcoded.
+
+### Build locally
+
+```bash
+# Terminal 1 — seller API
+cargo run
+
+# Terminal 2 — storefront dev (proxies /api to :8080)
+cd storefront && npm install && npm run dev
+```
+
+See [`docs/HUMAN-STOREFRONT.md`](docs/HUMAN-STOREFRONT.md) for manual test checklist.
+
+### Production build (local)
+
+```bash
+npm run build:storefront
+# → writes public/ (index.html, assets/, wallet.js)
+```
+
+Optional: set `PUBLIC_RPC_URL` for browser metadata/inventory reads (otherwise facilitator `/health` → `solanaWalletRpcUrl`, then public cluster RPC).
+
 ## Endpoints
 
 | Method | Path | Description |
 |--------|------|-------------|
 | `GET` | `/api/v1/buy-spl-token` | Unpaid → 402 quote; paid → deliver SPL + SubmitDelivery |
+| `GET` | `/api/v1/buy-spl-token/catalog` | Public catalog + cluster context for human storefront |
 | `GET` | `/api/v1/buy-spl-token/intent-contract` | Intent contract v0.3 (`delegated-authoring/v1`) |
+| `GET` | `/` | Human storefront (static SPA, emerald UI) |
 | `GET` | `/health` | Liveness |
 
 ## Normative alignment

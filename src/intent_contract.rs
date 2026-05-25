@@ -60,13 +60,19 @@ pub fn intent_contract_document() -> Value {
         },
         "slaEscrowSemantics": {
             "rail": "sla-escrow",
+            "fundPaymentTtlRule": crate::sla_escrow_ttl::RULE_ID,
             "flow": [
                 "Unpaid GET → seller returns commitMaterial (unit + session quote fields)",
                 "Buyer composes TransferSla from commitMaterial session totals + payment_uid",
                 "Buyer signs FundPayment(sla_hash, payment_uid) for accepts[].amount via pr402",
                 "Paid GET with PAYMENT-SIGNATURE → seller verifies sla_hash, settles escrow, TransferChecked, SubmitDelivery"
             ],
-            "uniqueValue": "Payment (USDC escrow) and deliverable (SPL transfer) are independently configured at catalog unit list, then seller-quoted as session totals — enabling quantity without breaking x402 fixed-offer semantics."
+            "uniqueValue": "Payment (USDC escrow) and deliverable (SPL transfer) are independently configured at catalog unit list, then seller-quoted as session totals — enabling quantity without breaking x402 fixed-offer semantics.",
+            "ttlRules": [
+                "accepts[].maxTimeoutSeconds is the FundPayment TTL (seconds until payment.expires_at)",
+                "FundPayment.ttl_seconds MUST equal accepts[].maxTimeoutSeconds for the same quoted session",
+                "maxTimeoutSeconds MUST be >= delivery_cutoff_seconds + delivery_budget_seconds (see x402/sla-escrow-fund-payment-ttl/v1)"
+            ]
         },
         "catalogUnitList": {
             "description": "Operator-configured per-unit list prices. Never copied directly into accepts[].amount.",

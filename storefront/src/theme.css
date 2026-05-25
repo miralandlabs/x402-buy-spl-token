@@ -1,0 +1,89 @@
+:root {
+  --fair-primary: #10b981;
+  --fair-secondary: #059669;
+  --fair-accent: #0891b2;
+  --fair-gradient-primary: linear-gradient(135deg, #10b981 0%, #059669 100%);
+  --fair-radius: 1rem;
+  --font-body: "JetBrains Mono", ui-monospace, "Cascadia Code", "SF Mono", monospace;
+  --font-display: "JetBrains Mono", ui-monospace, "Cascadia Code", "SF Mono", monospace;
+}
+
+[data-theme="dark"] {
+  color-scheme: dark;
+  --fair-bg-primary: #0f1419;
+  --fair-bg-secondary: #1a1f25;
+  --fair-bg-tertiary: #232a31;
+  --fair-text-primary: #f8fafc;
+  --fair-text-secondary: #cbd5e1;
+  --fair-text-muted: #64748b;
+  --fair-text-on-primary: #ffffff;
+  --fair-text-on-accent: #ecfdf5;
+  --fair-border: rgba(16, 185, 129, 0.2);
+  --fair-border-hover: rgba(16, 185, 129, 0.45);
+  --fair-control-bg: #232a31;
+  --fair-control-border: rgba(16, 185, 129, 0.25);
+  --fair-accent-surface: rgba(16, 185, 129, 0.08);
+  --fair-hero-gradient: linear-gradient(180deg, rgba(16, 185, 129, 0.08) 0%, transparent 100%);
+  --fair-overlay: rgba(0, 0, 0, 0.65);
+  --fair-overlay-strong: rgba(0, 0, 0, 0.7);
+  --fair-shadow: 0 8px 32px rgba(0, 0, 0, 0.35);
+  --fair-stock-in: #6ee7b7;
+  --fair-stock-out: #f87171;
+  --fair-error: #fca5a5;
+  --fair-step-pending-border: rgba(100, 116, 139, 0.45);
+  --fair-focus-ring: rgba(16, 185, 129, 0.22);
+}
+
+[data-theme="light"] {
+  color-scheme: light;
+  --fair-bg-primary: #f3f6f4;
+  --fair-bg-secondary: #ffffff;
+  --fair-bg-tertiary: #e8efe9;
+  --fair-text-primary: #0f1419;
+  --fair-text-secondary: #334155;
+  --fair-text-muted: #64748b;
+  --fair-text-on-primary: #ffffff;
+  --fair-text-on-accent: #ecfdf5;
+  --fair-border: rgba(5, 150, 105, 0.22);
+  --fair-border-hover: rgba(5, 150, 105, 0.45);
+  --fair-control-bg: #ffffff;
+  --fair-control-border: rgba(5, 150, 105, 0.28);
+  --fair-accent-surface: rgba(16, 185, 129, 0.1);
+  --fair-hero-gradient: linear-gradient(180deg, rgba(16, 185, 129, 0.12) 0%, transparent 100%);
+  --fair-overlay: rgba(15, 20, 25, 0.45);
+  --fair-overlay-strong: rgba(15, 20, 25, 0.55);
+  --fair-shadow: 0 8px 32px rgba(15, 20, 25, 0.12);
+  --fair-stock-in: #059669;
+  --fair-stock-out: #dc2626;
+  --fair-error: #dc2626;
+  --fair-step-pending-border: rgba(100, 116, 139, 0.55);
+  --fair-focus-ring: rgba(16, 185, 129, 0.25);
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  min-height: 100%;
+  background: var(--fair-bg-primary);
+  color: var(--fair-text-primary);
+  font-family: var(--font-body);
+  -webkit-font-smoothing: antialiased;
+  transition:
+    background-color 0.2s ease,
+    color 0.2s ease;
+}
+
+button {
+  font-family: inherit;
+  cursor: pointer;
+}
+
+a {
+  color: var(--fair-primary);
+}
