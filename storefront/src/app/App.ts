@@ -41,7 +41,7 @@ export async function bootstrapApp(root: HTMLElement): Promise<void> {
     hero.className = "hero";
     hero.innerHTML = `
       <h2>Buy SPL tokens with x402</h2>
-      <p>Pay USDC into escrow. Tokens arrive in your wallet on-chain; once an oracle confirms delivery, payment releases to the seller — the same x402 SLA-Escrow rail agents use, built for humans too.</p>
+      <p>Pay USDC into escrow. Tokens arrive in your wallet on-chain. Once an oracle confirms delivery, payment releases to the seller — the same x402 SLA-Escrow rail agents use, built for humans too.</p>
     `;
 
     const showcase = document.createElement("div");
