@@ -112,8 +112,8 @@ Deploy to Vercel with the included [`vercel.json`](vercel.json) (Rust entry: `sr
 Pushes to any branch run [`.github/workflows/build-and-deploy.yml`](.github/workflows/build-and-deploy.yml):
 
 1. **CI:** `cargo fmt`, `clippy -D warnings`, `cargo test`
-2. **Storefront:** `npm run build:storefront` → `public/` (`index.html`, `assets/`, `wallet.js`)
-3. **Deploy:** `vercel pull` → `vercel build` → `vercel deploy --prebuilt` (CLI pinned to `52.2.1`, same as pr402)
+2. **Storefront (once):** `npm run build:storefront` → `public/` (`index.html`, `assets/`, `wallet.js`). Not in `vercel.json` — GitHub Actions (or manual deploy) owns this step.
+3. **Deploy:** `vercel pull` → `vercel build` (Rust only; static files from step 2) → `vercel deploy --prebuilt` (CLI pinned to `52.2.1`, same as pr402)
 
 | Branch | Vercel environment | Typical custom domain |
 |--------|-------------------|------------------------|
@@ -130,7 +130,7 @@ Pushes to any branch run [`.github/workflows/build-and-deploy.yml`](.github/work
 
 Solana / catalog env vars (`X402_NETWORK`, `BUY_SPL_TOKEN_CATALOG_JSON`, keypairs, etc.) stay in the **Vercel project** per environment (Preview vs Production), not in GitHub.
 
-Manual deploy (without Actions): `npm run build:storefront && vercel deploy --prebuilt`.
+Manual deploy (without Actions): `npm run build:storefront && vercel build && vercel deploy --prebuilt`.
 
 ## Human storefront
 
