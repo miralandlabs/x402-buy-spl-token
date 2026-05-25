@@ -90,7 +90,7 @@ export async function confirmSlaEscrowPayment(details: {
         <h4>Confirm SLA-Escrow payment</h4>
         <p>Pay <strong>${formatUsdcAmount(details.usdcAmountRaw)}</strong> into escrow for <strong>${details.tokenName}</strong>.</p>
         <p>Delivery: <strong>${details.deliverAmountRaw}</strong> tokens (raw units per seller quote).</p>
-        <p>Network (Solana ${networkLabel}):</p>
+        <p>Network (Solana ${networkLabel})</p>
         <div class="confirm-actions">
           <button type="button" class="btn btn-ghost" data-action="cancel">Cancel</button>
           <button type="button" class="btn btn-primary" data-action="confirm">Confirm &amp; sign</button>

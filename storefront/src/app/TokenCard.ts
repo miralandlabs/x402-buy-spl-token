@@ -25,6 +25,7 @@ export function renderTokenCard(
     <div class="token-card-body">
       <h3>${escapeHtml(displayName)}</h3>
       <p class="token-card-sub">${escapeHtml(item.name)}</p>
+      <p class="token-card-mint">${escapeHtml(item.mint)}</p>
       <p class="token-price"><strong>${escapeHtml(item.priceUsdcUi)} USDC</strong> → ${escapeHtml(item.deliverAmountUi)} tokens</p>
       <p class="token-stock ${inventory.inStock ? "in-stock" : "out-of-stock"}">
         ${inventory.inStock ? `In stock: ${escapeHtml(inventory.uiAmount)}` : "Out of stock"}
