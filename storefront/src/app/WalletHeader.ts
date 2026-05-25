@@ -1,5 +1,12 @@
 import type { CatalogDocument } from "../services/catalog";
 import { clusterLabel } from "../services/catalog";
+import {
+  getTheme,
+  subscribeTheme,
+  toggleTheme,
+  themeToggleIcon,
+  themeToggleLabel,
+} from "../services/theme";
 
 export interface WalletState {
   pubkey: string | null;
@@ -63,6 +70,15 @@ export function renderWalletHeader(root: HTMLElement, catalog: CatalogDocument):
         <p>Humans welcome · SLA-Escrow protected</p>
       </div>
       <div class="topbar-actions">
+        <button
+          type="button"
+          class="btn btn-ghost theme-toggle"
+          id="theme-toggle"
+          aria-label="${themeToggleLabel(getTheme())}"
+          title="${themeToggleLabel(getTheme())}"
+        >
+          <span class="theme-toggle-icon" aria-hidden="true">${themeToggleIcon(getTheme())}</span>
+        </button>
         <span class="${pillClass}">${cluster}</span>
         <span class="wallet-chip" id="wallet-chip"></span>
         <button type="button" class="btn btn-primary" id="wallet-btn">Connect wallet</button>
@@ -72,6 +88,20 @@ export function renderWalletHeader(root: HTMLElement, catalog: CatalogDocument):
 
   const btn = root.querySelector("#wallet-btn") as HTMLButtonElement;
   const chip = root.querySelector("#wallet-chip") as HTMLSpanElement;
+  const themeBtn = root.querySelector("#theme-toggle") as HTMLButtonElement;
+  const themeIcon = themeBtn?.querySelector(".theme-toggle-icon");
+
+  const syncThemeToggle = () => {
+    const mode = getTheme();
+    themeBtn?.setAttribute("aria-label", themeToggleLabel(mode));
+    themeBtn?.setAttribute("title", themeToggleLabel(mode));
+    if (themeIcon) themeIcon.textContent = themeToggleIcon(mode);
+  };
+
+  themeBtn?.addEventListener("click", () => {
+    toggleTheme();
+  });
+  subscribeTheme(syncThemeToggle);
 
   const sync = () => {
     const { pubkey } = getWalletState();

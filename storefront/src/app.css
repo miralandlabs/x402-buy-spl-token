@@ -43,7 +43,7 @@
   border-radius: 999px;
   border: 1px solid var(--fair-border);
   color: var(--fair-primary);
-  background: rgba(16, 185, 129, 0.08);
+  background: var(--fair-accent-surface);
 }
 
 .hero {
@@ -51,7 +51,7 @@
   margin-bottom: 2.25rem;
   padding: 1.5rem 1rem;
   border-radius: var(--fair-radius);
-  background: linear-gradient(180deg, rgba(16, 185, 129, 0.08) 0%, transparent 100%);
+  background: var(--fair-hero-gradient);
   border: 1px solid var(--fair-border);
 }
 
@@ -80,18 +80,34 @@
 
 .btn-primary {
   background: var(--fair-gradient-primary);
-  color: #fff;
+  color: var(--fair-text-on-primary);
+}
+
+.btn-ghost {
+  background: var(--fair-control-bg);
+  border-color: var(--fair-control-border);
+  color: var(--fair-text-secondary);
+}
+
+.btn-ghost:hover {
+  border-color: var(--fair-border-hover);
+  color: var(--fair-text-primary);
+}
+
+.theme-toggle {
+  min-width: 2.5rem;
+  padding-left: 0.65rem;
+  padding-right: 0.65rem;
+}
+
+.theme-toggle-icon {
+  font-size: 1rem;
+  line-height: 1;
 }
 
 .btn-primary:disabled {
   opacity: 0.45;
   cursor: not-allowed;
-}
-
-.btn-ghost {
-  background: transparent;
-  border-color: var(--fair-border);
-  color: var(--fair-text-secondary);
 }
 
 .wallet-chip {
@@ -172,7 +188,12 @@
   align-items: center;
   justify-content: center;
   font-weight: 700;
-  color: #fff;
+  color: var(--fair-text-on-primary);
+}
+
+.token-card-buy {
+  margin-top: 0.75rem;
+  width: 100%;
 }
 
 .token-card-body {
@@ -195,17 +216,17 @@
 }
 
 .token-stock.in-stock {
-  color: #6ee7b7;
+  color: var(--fair-stock-in);
 }
 
 .token-stock.out-of-stock {
-  color: #f87171;
+  color: var(--fair-stock-out);
 }
 
 .overlay {
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.65);
+  background: var(--fair-overlay);
   display: flex;
   align-items: flex-end;
   justify-content: center;
@@ -247,8 +268,8 @@
   text-align: center;
   padding: 0.5rem;
   border-radius: 0.5rem;
-  border: 1px solid var(--fair-border);
-  background: var(--fair-bg-tertiary);
+  border: 1px solid var(--fair-control-border);
+  background: var(--fair-control-bg);
   color: var(--fair-text-primary);
 }
 
@@ -304,20 +325,20 @@
 }
 
 .purchase-step.is-pending .purchase-step-marker {
-  border-color: rgba(100, 116, 139, 0.45);
+  border-color: var(--fair-step-pending-border);
   color: var(--fair-text-muted);
 }
 
 .purchase-step.is-active .purchase-step-marker {
   border-color: var(--fair-primary);
   color: var(--fair-primary);
-  box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.22);
+  box-shadow: 0 0 0 3px var(--fair-focus-ring);
 }
 
 .purchase-step.is-done .purchase-step-marker {
   background: var(--fair-primary);
   border-color: var(--fair-primary);
-  color: #ecfdf5;
+  color: var(--fair-text-on-accent);
 }
 
 .purchase-step-label {
@@ -342,7 +363,7 @@
   margin: 1rem 0 0.25rem;
   padding: 1rem 0.75rem;
   border-radius: 0.75rem;
-  background: rgba(16, 185, 129, 0.08);
+  background: var(--fair-accent-surface);
   border: 1px solid var(--fair-border);
 }
 
@@ -390,10 +411,28 @@
   overflow: hidden;
 }
 
+.sheet-error {
+  color: var(--fair-error);
+  font-size: 0.85rem;
+  margin: 0;
+}
+
+.loading {
+  color: var(--fair-text-secondary);
+}
+
+.error-banner {
+  padding: 1rem;
+  border-radius: var(--fair-radius);
+  border: 1px solid var(--fair-border);
+  background: var(--fair-bg-secondary);
+  color: var(--fair-error);
+}
+
 .confirm-overlay {
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.7);
+  background: var(--fair-overlay-strong);
   display: flex;
   align-items: center;
   justify-content: center;

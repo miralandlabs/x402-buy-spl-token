@@ -29,7 +29,7 @@ export function renderTokenCard(
       <p class="token-stock ${inventory.inStock ? "in-stock" : "out-of-stock"}">
         ${inventory.inStock ? `In stock: ${escapeHtml(inventory.uiAmount)}` : "Out of stock"}
       </p>
-      <button type="button" class="btn btn-primary" style="margin-top:0.75rem;width:100%" ${inventory.inStock ? "" : "disabled"}>
+      <button type="button" class="btn btn-primary token-card-buy" ${inventory.inStock ? "" : "disabled"}>
         Buy
       </button>
     </div>

@@ -8,6 +8,16 @@
       name="description"
       content="Human-friendly SPL token shop powered by x402 SLA-Escrow. Simple, elegant, on-chain."
     />
+    <script>
+      (function () {
+        var k = "x402-storefront-theme";
+        var t = null;
+        try {
+          t = localStorage.getItem(k);
+        } catch (e) {}
+        document.documentElement.setAttribute("data-theme", t === "light" ? "light" : "dark");
+      })();
+    </script>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link

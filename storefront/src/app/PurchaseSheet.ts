@@ -47,7 +47,7 @@ export function openPurchaseSheet(
             ? `<div class="sheet-row"><span>Session total</span><strong>${formatUsdcAmount(quoteUsdcRaw)}</strong></div>`
             : ""
         }
-        ${errorMsg ? `<p style="color:#fca5a5;font-size:0.85rem">${escapeHtml(errorMsg)}</p>` : ""}
+        ${errorMsg ? `<p class="sheet-error">${escapeHtml(errorMsg)}</p>` : ""}
         ${step === "done" && result ? renderSuccess(result, catalog.cluster) : ""}
         <div class="sheet-actions">
           <button type="button" class="btn btn-ghost" data-close>Close</button>

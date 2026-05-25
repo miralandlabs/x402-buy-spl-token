@@ -1,20 +1,21 @@
 .wallet-adapter-modal-wrapper {
-  background: rgba(15, 20, 25, 0.98) !important;
-  border: 1px solid rgba(16, 185, 129, 0.25) !important;
+  background: color-mix(in srgb, var(--fair-bg-secondary) 98%, transparent) !important;
+  border: 1px solid var(--fair-border) !important;
 }
 
 .wallet-adapter-modal-title {
-  color: #f8fafc !important;
+  color: var(--fair-text-primary) !important;
 }
 
 .wallet-adapter-modal-list .wallet-adapter-button {
-  background-color: rgba(26, 31, 37, 0.95) !important;
-  border-color: rgba(16, 185, 129, 0.2) !important;
-  color: #e2e8f0 !important;
+  background-color: var(--fair-control-bg) !important;
+  border-color: var(--fair-control-border) !important;
+  color: var(--fair-text-secondary) !important;
 }
 
 .wallet-adapter-modal-list .wallet-adapter-button:hover {
-  border-color: rgba(16, 185, 129, 0.45) !important;
+  border-color: var(--fair-border-hover) !important;
+  color: var(--fair-text-primary) !important;
 }
 
 .storefront-wallet-hidden-trigger {
