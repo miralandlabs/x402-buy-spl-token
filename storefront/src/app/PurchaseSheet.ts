@@ -148,24 +148,45 @@ export function openPurchaseSheet(
 
 function renderSteps(step: Step): string {
   const steps = [
-    { id: "quote", label: "Quote" },
-    { id: "sign", label: "Sign payment" },
-    { id: "deliver", label: "Deliver" },
-    { id: "done", label: "Done" },
+    { label: "Quote" },
+    { label: "Sign payment" },
+    { label: "Deliver" },
+    { label: "Done" },
   ];
-  const order = ["idle", "quote", "sign", "deliver", "done"];
-  const idx = order.indexOf(step);
-  return `<div class="progress-steps">${steps
+
+  const activeIndex =
+    step === "idle"
+      ? -1
+      : step === "quote"
+        ? 0
+        : step === "sign"
+          ? 1
+          : step === "deliver"
+            ? 2
+            : steps.length;
+
+  const items = steps
     .map((s, i) => {
-      let cls = "progress-step";
-      if (i + 1 < idx) cls += " is-done";
-      else if (i + 1 === idx || (step === "idle" && i === 0)) cls += i + 1 === idx ? " is-active" : "";
-      if (step === "done") cls = "progress-step is-done";
-      else if (step === "sign" && i === 1) cls = "progress-step is-active";
-      else if (step === "quote" && i === 0) cls = "progress-step is-active";
-      return `<span class="${cls}">${s.label}</span>`;
+      let state: "done" | "active" | "pending";
+      if (step === "done" || i < activeIndex) {
+        state = "done";
+      } else if (i === activeIndex) {
+        state = "active";
+      } else {
+        state = "pending";
+      }
+
+      const marker = state === "done" ? "✓" : String(i + 1);
+      return `
+        <li class="purchase-step is-${state}">
+          <span class="purchase-step-marker">${marker}</span>
+          <span class="purchase-step-label">${s.label}</span>
+        </li>
+      `;
     })
-    .join("")}</div>`;
+    .join("");
+
+  return `<ol class="purchase-stepper" aria-label="Purchase progress">${items}</ol>`;
 }
 
 function renderSuccess(result: PurchaseResult, cluster: string): string {
@@ -182,11 +203,16 @@ function renderSuccess(result: PurchaseResult, cluster: string): string {
   }
   return `
     <div class="success-view">
-      <div class="check">✓</div>
-      <p><strong>${escapeHtml(result.status)}</strong></p>
-      <div class="tx-links">${links.join("")}</div>
+      <div class="check" aria-hidden="true">✓</div>
+      <p class="success-status">${escapeHtml(formatStatus(result.status))}</p>
+      <div class="tx-links">${links.join("\n")}</div>
     </div>
   `;
+}
+
+function formatStatus(status: string): string {
+  if (!status) return "Completed";
+  return status.charAt(0).toUpperCase() + status.slice(1);
 }
 
 function escapeHtml(s: string): string {
