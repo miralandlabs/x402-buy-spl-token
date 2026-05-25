@@ -155,10 +155,12 @@
   justify-content: center;
 }
 
-.token-card-media img {
+.token-card-media img,
+.token-card-image {
   width: 100%;
   height: 100%;
   object-fit: cover;
+  display: block;
 }
 
 .token-monogram {

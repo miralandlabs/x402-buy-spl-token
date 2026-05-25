@@ -22,34 +22,69 @@ function metadataPda(mint: PublicKey): PublicKey {
   return pda;
 }
 
-function readFixedString(data: Uint8Array, offset: number, maxLen: number): string {
-  const slice = data.slice(offset, offset + maxLen);
-  const nul = slice.indexOf(0);
-  const end = nul >= 0 ? nul : maxLen;
-  return new TextDecoder().decode(slice.slice(0, end)).replace(/\0/g, "").trim();
+function readBorshString(
+  data: Uint8Array,
+  offset: number,
+): { value: string; next: number } | null {
+  if (offset + 4 > data.length) return null;
+  const len = new DataView(data.buffer, data.byteOffset, data.byteLength).getUint32(
+    offset,
+    true,
+  );
+  const start = offset + 4;
+  const end = start + len;
+  if (end > data.length) return null;
+  const value = new TextDecoder()
+    .decode(data.slice(start, end))
+    .replace(/\0/g, "")
+    .trim();
+  return { value, next: end };
 }
 
 function parseMetadataAccount(data: Uint8Array): { name: string; symbol: string; uri: string } | null {
-  // MetadataV1 layout: key(1) + update_authority(32) + mint(32) + name(32) + symbol(10) + uri(200)
-  if (data.length < 65 + 32 + 10 + 200) return null;
-  const key = data[0];
-  if (key !== 4) return null;
-  const name = readFixedString(data, 65, 32);
-  const symbol = readFixedString(data, 97, 10);
-  const uri = readFixedString(data, 107, 200);
-  return { name, symbol, uri };
+  // Metadata account: key(1) + update_authority(32) + mint(32) + Data { name, symbol, uri } (Borsh strings)
+  if (data.length < 65) return null;
+  if (data[0] !== 4) return null;
+
+  let offset = 1 + 32 + 32;
+  const namePart = readBorshString(data, offset);
+  if (!namePart) return null;
+  const symbolPart = readBorshString(data, namePart.next);
+  if (!symbolPart) return null;
+  const uriPart = readBorshString(data, symbolPart.next);
+  if (!uriPart) return null;
+
+  return {
+    name: namePart.value,
+    symbol: symbolPart.value,
+    uri: uriPart.value,
+  };
+}
+
+function normalizeFetchableUri(uri: string): string | null {
+  const trimmed = uri.trim();
+  if (!trimmed) return null;
+  if (trimmed.startsWith("http://") || trimmed.startsWith("https://")) {
+    return trimmed;
+  }
+  if (trimmed.startsWith("ipfs://")) {
+    return `https://gateway.pinata.cloud/ipfs/${trimmed.slice("ipfs://".length)}`;
+  }
+  return null;
 }
 
 async function fetchImageFromUri(uri: string): Promise<string | null> {
-  if (!uri || !uri.startsWith("http")) return null;
+  const fetchUrl = normalizeFetchableUri(uri);
+  if (!fetchUrl) return null;
   try {
     const controller = new AbortController();
     const t = setTimeout(() => controller.abort(), 8000);
-    const res = await fetch(uri, { signal: controller.signal });
+    const res = await fetch(fetchUrl, { signal: controller.signal });
     clearTimeout(t);
     if (!res.ok) return null;
     const json = (await res.json()) as { image?: string };
-    return typeof json.image === "string" ? json.image : null;
+    if (typeof json.image !== "string" || !json.image.trim()) return null;
+    return normalizeFetchableUri(json.image) ?? json.image.trim();
   } catch {
     return null;
   }

@@ -19,12 +19,9 @@ export function renderTokenCard(
 
   const displayName = metadata.name || item.name;
   const monogram = monogramFromMint(item.mint);
-  const mediaInner = metadata.imageUrl
-    ? `<img src="${escapeAttr(metadata.imageUrl)}" alt="" loading="lazy" />`
-    : `<div class="token-monogram">${monogram}</div>`;
 
   card.innerHTML = `
-    <div class="token-card-media">${mediaInner}</div>
+    <div class="token-card-media"></div>
     <div class="token-card-body">
       <h3>${escapeHtml(displayName)}</h3>
       <p class="token-card-sub">${escapeHtml(item.name)}</p>
@@ -38,8 +35,40 @@ export function renderTokenCard(
     </div>
   `;
 
+  const media = card.querySelector(".token-card-media") as HTMLElement;
+  mountTokenMedia(media, metadata.imageUrl, displayName, monogram);
+
   card.querySelector("button")?.addEventListener("click", () => onBuy(item));
   return card;
+}
+
+function mountTokenMedia(
+  media: HTMLElement,
+  imageUrl: string | null,
+  displayName: string,
+  monogram: string,
+): void {
+  if (imageUrl) {
+    const img = document.createElement("img");
+    img.src = imageUrl;
+    img.alt = displayName;
+    img.loading = "lazy";
+    img.decoding = "async";
+    img.className = "token-card-image";
+    img.addEventListener("error", () => {
+      media.replaceChildren(buildMonogram(monogram));
+    });
+    media.appendChild(img);
+    return;
+  }
+  media.appendChild(buildMonogram(monogram));
+}
+
+function buildMonogram(monogram: string): HTMLElement {
+  const el = document.createElement("div");
+  el.className = "token-monogram";
+  el.textContent = monogram;
+  return el;
 }
 
 export function renderTokenShowcase(
@@ -70,8 +99,4 @@ export function renderTokenShowcase(
 
 function escapeHtml(s: string): string {
   return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-}
-
-function escapeAttr(s: string): string {
-  return escapeHtml(s).replace(/"/g, "&quot;");
 }

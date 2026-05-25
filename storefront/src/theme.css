@@ -13,8 +13,10 @@
   --fair-border-hover: rgba(16, 185, 129, 0.45);
   --fair-shadow: 0 8px 32px rgba(0, 0, 0, 0.35);
   --fair-radius: 1rem;
-  --font-body: "Inter", system-ui, sans-serif;
-  --font-display: "Space Grotesk", "Inter", system-ui, sans-serif;
+  /* Preview: monospace — swap to human stack below for production polish */
+  --font-body: "JetBrains Mono", ui-monospace, "Cascadia Code", "SF Mono", monospace;
+  --font-display: "JetBrains Mono", ui-monospace, "Cascadia Code", "SF Mono", monospace;
+  /* Recommended human storefront: "DM Sans" body + "Outfit" or "Space Grotesk" display */
 }
 
 *,
