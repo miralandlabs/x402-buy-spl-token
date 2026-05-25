@@ -1,0 +1,113 @@
+name: Build and Deploy
+
+on:
+  push:
+    branches: ["**"]
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - name: Cache Cargo dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-
+
+      - name: Check Rust code
+        run: cargo check --all-targets
+
+      - name: Check formatting
+        run: cargo fmt --all -- --check
+
+      - name: Run Clippy
+        run: cargo clippy --all-targets -- -D warnings
+
+      - name: Run tests
+        run: cargo test --all-targets
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: storefront/package-lock.json
+
+      - name: Build human storefront (Vite + wallet.js → public/)
+        run: npm run build:storefront
+
+      - name: Verify static deploy artifacts
+        run: |
+          test -f public/index.html
+          test -f public/wallet.js
+          test -d public/assets
+          echo "public/ ready for Vercel static routes"
+
+      # vercel-rust is unmaintained vs. current CLI build API. v53.x breaks `vercel build` too (`reading 'target'`).
+      # Pin CLI 52.x; deploy uses build + --prebuilt so Vercel cloud doesn't re-run the rust builder.
+      - name: Install Vercel CLI
+        run: npm install --global vercel@52.2.1
+
+      - name: Link to Existing Vercel Project
+        run: |
+          mkdir -p .vercel
+          cat > .vercel/project.json << EOF
+          {
+            "orgId": "${{ secrets.ORG_ID }}",
+            "projectId": "${{ secrets.PROJECT_ID }}"
+          }
+          EOF
+
+      - name: Set deployment environment
+        run: |
+          if [ "${{ github.ref }}" = "refs/heads/main" ]; then
+            echo "VERCEL_ENV=production" >> $GITHUB_ENV
+            echo "PUBLIC_URL=https://spl-token.hashspace.me" >> $GITHUB_ENV
+          else
+            echo "VERCEL_ENV=preview" >> $GITHUB_ENV
+            echo "PUBLIC_URL=https://preview.spl-token.hashspace.me" >> $GITHUB_ENV
+          fi
+
+      - name: Deploy to Vercel (prebuilt)
+        run: |
+          set -euo pipefail
+          if [ "${VERCEL_ENV}" = "production" ]; then
+            vercel pull --yes --environment=production --token="${{ secrets.VERCEL_TOKEN }}"
+            vercel build --prod --token="${{ secrets.VERCEL_TOKEN }}"
+            DEPLOY_OUTPUT=$(vercel deploy --prebuilt --yes --prod --token="${{ secrets.VERCEL_TOKEN }}")
+          else
+            vercel pull --yes --environment=preview --token="${{ secrets.VERCEL_TOKEN }}"
+            vercel build --token="${{ secrets.VERCEL_TOKEN }}"
+            DEPLOY_OUTPUT=$(vercel deploy --prebuilt --yes --token="${{ secrets.VERCEL_TOKEN }}")
+          fi
+
+          DEPLOYMENT_URL=$(echo "$DEPLOY_OUTPUT" | grep -o 'https://[^[:space:]]*\.vercel\.app' | head -1)
+          echo "DEPLOYMENT_URL=$DEPLOYMENT_URL" >> $GITHUB_ENV
+
+          echo "Deployment successful"
+          echo "Environment: ${VERCEL_ENV}"
+          echo "Vercel URL: $DEPLOYMENT_URL"
+        env:
+          VERCEL_ORG_ID: ${{ secrets.ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ secrets.PROJECT_ID }}
+          VERCEL_ENV: ${{ env.VERCEL_ENV }}
+
+      - name: Print final URLs
+        run: |
+          echo "Deployments completed"
+          echo "Environment: ${{ env.VERCEL_ENV }}"
+          echo "Custom domain (configure in Vercel): ${{ env.PUBLIC_URL }}"
+          echo "Vercel deployment URL: ${{ env.DEPLOYMENT_URL }}"

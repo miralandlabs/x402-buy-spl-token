@@ -1,0 +1,7 @@
+{
+  "name": "x402-buy-spl-token",
+  "private": true,
+  "scripts": {
+    "build:storefront": "cd storefront && npm install && npm run build"
+  }
+}

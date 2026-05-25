@@ -65,13 +65,8 @@ use {
     vercel_runtime::{Body, Response, StatusCode as VercelStatusCode},
 };
 
-/// USDC mint (devnet) — used as the `asset` of the 402 `accepts[]` line
-/// when the request is served against a devnet RPC. Mainnet uses
-/// [`USDC_MAINNET_MINT`].
-const USDC_DEVNET_MINT: &str = "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU";
-
-/// USDC mint (mainnet).
-const USDC_MAINNET_MINT: &str = "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v";
+/// USDC mint constants and cluster helpers live in [`crate::network`].
+use crate::network::{cluster_name_for_network, usdc_mint_for_network};
 
 /// SLA-escrow x402 scheme identifier the 402 line advertises. Matches the
 /// constant pr402's facilitator advertises in `/supported`.
@@ -2095,32 +2090,6 @@ fn make_registry_client() -> Result<RegistryClient, String> {
     Ok(client)
 }
 
-/// Pick the USDC mint that matches the configured Solana network. Devnet
-/// is detected by the CAIP-2 suffix; everything else falls back to
-/// mainnet.
-fn usdc_mint_for_network(network: &str) -> &'static str {
-    if network.contains("EtWTRABZaYq6iMfeYKouRu166VU2xqa1") {
-        USDC_DEVNET_MINT
-    } else {
-        USDC_MAINNET_MINT
-    }
-}
-
-/// Pick the kebab-case cluster name the oracle's `TransferCluster` enum
-/// expects. `solana:Etwt…` (devnet CAIP-2) → `"devnet"`; testnet CAIP-2
-/// → `"testnet"`; everything else → `"mainnet-beta"`.
-fn cluster_name_for_network(network: &str) -> &'static str {
-    // Devnet genesis: EtWTRABZaYq6iMfeYKouRu166VU2xqa1
-    if network.contains("EtWTRABZaYq6iMfeYKouRu166VU2xqa1") {
-        "devnet"
-    } else if network.contains("4uhcVJyU9pJkvQyS88uRDiswHXSCkY3z") {
-        // Testnet genesis prefix.
-        "testnet"
-    } else {
-        "mainnet-beta"
-    }
-}
-
 /// Fetch the canonical sla-escrow `extra` block from the configured
 /// pr402 facilitator. Used at request time to seed the 402 envelope so
 /// new fields pr402 starts requiring (e.g. `feePayer`, `bankAddress`,
@@ -2277,6 +2246,7 @@ mod tests {
 
     #[test]
     fn usdc_mint_picks_devnet_for_devnet_network() {
+        use crate::network::{USDC_DEVNET_MINT, USDC_MAINNET_MINT};
         assert_eq!(
             usdc_mint_for_network("solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1"),
             USDC_DEVNET_MINT

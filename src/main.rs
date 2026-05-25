@@ -11,6 +11,7 @@ use {
     tower_http::trace::TraceLayer,
     x402_buy_spl_token::{
         axum_adapter::into_axum,
+        catalog_api,
         config::Config,
         cors::ALLOW_HEADERS,
         handler,
@@ -53,6 +54,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
             "/api/v1/buy-spl-token/intent-contract",
             get(intent_contract).options(cors_options),
         )
+        .route(
+            "/api/v1/buy-spl-token/catalog",
+            get(catalog).options(cors_options),
+        )
         .route("/health", get(|| async { (StatusCode::OK, "ok") }))
         .layer(cors)
         .layer(TraceLayer::new_for_http())
@@ -83,6 +88,10 @@ async fn intent_contract() -> impl IntoResponse {
         [(axum::http::header::CONTENT_TYPE, "application/json")],
         body,
     )
+}
+
+async fn catalog(State(state): State<Arc<AppState>>) -> impl IntoResponse {
+    into_axum(catalog_api::handle_catalog(state).await)
 }
 
 async fn cors_options() -> impl IntoResponse {

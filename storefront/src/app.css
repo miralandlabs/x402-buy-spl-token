@@ -1,0 +1,324 @@
+/* App layout & components — see plan for emerald token shop */
+
+.shell {
+  max-width: 1120px;
+  margin: 0 auto;
+  padding: 1.25rem 1.25rem 3rem;
+}
+
+.topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  flex-wrap: wrap;
+  margin-bottom: 2rem;
+}
+
+.brand h1 {
+  font-family: var(--font-display);
+  font-size: 1.35rem;
+  font-weight: 700;
+  margin: 0;
+}
+
+.brand p {
+  margin: 0;
+  color: var(--fair-text-muted);
+  font-size: 0.875rem;
+}
+
+.topbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.cluster-pill {
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  padding: 0.35rem 0.65rem;
+  border-radius: 999px;
+  border: 1px solid var(--fair-border);
+  color: var(--fair-primary);
+  background: rgba(16, 185, 129, 0.08);
+}
+
+.hero {
+  text-align: center;
+  margin-bottom: 2.25rem;
+  padding: 1.5rem 1rem;
+  border-radius: var(--fair-radius);
+  background: linear-gradient(180deg, rgba(16, 185, 129, 0.08) 0%, transparent 100%);
+  border: 1px solid var(--fair-border);
+}
+
+.hero h2 {
+  font-family: var(--font-display);
+  font-size: clamp(1.5rem, 4vw, 2rem);
+  margin: 0 0 0.5rem;
+}
+
+.hero p {
+  margin: 0 auto;
+  color: var(--fair-text-secondary);
+  max-width: 36rem;
+}
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.65rem 1.1rem;
+  border-radius: 0.65rem;
+  border: 1px solid transparent;
+  font-weight: 600;
+  font-size: 0.9rem;
+}
+
+.btn-primary {
+  background: var(--fair-gradient-primary);
+  color: #fff;
+}
+
+.btn-primary:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.btn-ghost {
+  background: transparent;
+  border-color: var(--fair-border);
+  color: var(--fair-text-secondary);
+}
+
+.wallet-chip {
+  font-family: ui-monospace, monospace;
+  font-size: 0.8rem;
+  color: var(--fair-text-secondary);
+}
+
+.token-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 1.25rem;
+}
+
+@media (max-width: 640px) {
+  .token-carousel {
+    display: flex;
+    gap: 1rem;
+    overflow-x: auto;
+    scroll-snap-type: x mandatory;
+  }
+  .token-carousel .token-card {
+    flex: 0 0 85%;
+    max-width: 320px;
+    scroll-snap-align: center;
+  }
+  .token-grid {
+    display: none;
+  }
+}
+
+@media (min-width: 641px) {
+  .token-carousel {
+    display: none;
+  }
+}
+
+.token-card {
+  background: var(--fair-bg-secondary);
+  border: 1px solid var(--fair-border);
+  border-radius: var(--fair-radius);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.token-card:hover:not(.is-disabled) {
+  transform: translateY(-4px);
+  border-color: var(--fair-border-hover);
+}
+
+.token-card.is-disabled {
+  opacity: 0.55;
+}
+
+.token-card-media {
+  aspect-ratio: 1;
+  background: var(--fair-bg-tertiary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.token-card-media img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.token-monogram {
+  width: 4.5rem;
+  height: 4.5rem;
+  border-radius: 50%;
+  background: var(--fair-gradient-primary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  color: #fff;
+}
+
+.token-card-body {
+  padding: 1rem;
+  flex: 1;
+}
+
+.token-card-body h3 {
+  margin: 0;
+  font-family: var(--font-display);
+}
+
+.token-card-sub {
+  font-size: 0.8rem;
+  color: var(--fair-text-muted);
+}
+
+.token-price strong {
+  color: var(--fair-primary);
+}
+
+.token-stock.in-stock {
+  color: #6ee7b7;
+}
+
+.token-stock.out-of-stock {
+  color: #f87171;
+}
+
+.overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.65);
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  z-index: 1000;
+}
+
+@media (min-width: 640px) {
+  .overlay {
+    align-items: center;
+  }
+}
+
+.sheet {
+  background: var(--fair-bg-secondary);
+  border: 1px solid var(--fair-border);
+  border-radius: 1rem 1rem 0 0;
+  width: 100%;
+  max-width: 440px;
+  padding: 1.25rem;
+}
+
+.sheet-row {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.9rem;
+  margin-bottom: 0.65rem;
+  color: var(--fair-text-secondary);
+}
+
+.qty-control {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin: 1rem 0;
+}
+
+.qty-control input {
+  width: 4rem;
+  text-align: center;
+  padding: 0.5rem;
+  border-radius: 0.5rem;
+  border: 1px solid var(--fair-border);
+  background: var(--fair-bg-tertiary);
+  color: var(--fair-text-primary);
+}
+
+.progress-steps {
+  display: flex;
+  gap: 0.35rem;
+  margin: 1rem 0;
+  flex-wrap: wrap;
+}
+
+.progress-step {
+  font-size: 0.7rem;
+  padding: 0.25rem 0.5rem;
+  border-radius: 999px;
+  background: var(--fair-bg-tertiary);
+  color: var(--fair-text-muted);
+}
+
+.progress-step.is-active {
+  background: rgba(16, 185, 129, 0.2);
+  color: var(--fair-primary);
+}
+
+.progress-step.is-done {
+  background: rgba(16, 185, 129, 0.35);
+  color: #ecfdf5;
+}
+
+.sheet-actions {
+  display: flex;
+  gap: 0.75rem;
+  margin-top: 1.25rem;
+}
+
+.sheet-actions .btn {
+  flex: 1;
+}
+
+#miracle-wallet-adapter {
+  position: fixed;
+  left: -9999px;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+}
+
+.confirm-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.7);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 2000;
+  padding: 1rem;
+}
+
+.confirm-dialog {
+  background: var(--fair-bg-secondary);
+  border: 1px solid var(--fair-border);
+  border-radius: var(--fair-radius);
+  max-width: 400px;
+  width: 100%;
+  padding: 1.35rem;
+}
+
+.confirm-actions {
+  display: flex;
+  gap: 0.75rem;
+  margin-top: 1.25rem;
+}
+
+.confirm-actions .btn {
+  flex: 1;
+}

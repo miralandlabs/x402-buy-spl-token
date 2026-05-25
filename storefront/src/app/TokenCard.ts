@@ -1,0 +1,77 @@
+import type { CatalogDocument, CatalogItem } from "../services/catalog";
+import type { TokenMetadata } from "../services/metadata";
+import { monogramFromMint } from "../services/metadata";
+import type { InventoryInfo } from "../services/inventory";
+
+export interface EnrichedToken {
+  item: CatalogItem;
+  metadata: TokenMetadata;
+  inventory: InventoryInfo;
+}
+
+export function renderTokenCard(
+  enriched: EnrichedToken,
+  onBuy: (item: CatalogItem) => void,
+): HTMLElement {
+  const { item, metadata, inventory } = enriched;
+  const card = document.createElement("article");
+  card.className = "token-card" + (inventory.inStock ? "" : " is-disabled");
+
+  const displayName = metadata.name || item.name;
+  const monogram = monogramFromMint(item.mint);
+  const mediaInner = metadata.imageUrl
+    ? `<img src="${escapeAttr(metadata.imageUrl)}" alt="" loading="lazy" />`
+    : `<div class="token-monogram">${monogram}</div>`;
+
+  card.innerHTML = `
+    <div class="token-card-media">${mediaInner}</div>
+    <div class="token-card-body">
+      <h3>${escapeHtml(displayName)}</h3>
+      <p class="token-card-sub">${escapeHtml(item.name)}</p>
+      <p class="token-price"><strong>${escapeHtml(item.priceUsdcUi)} USDC</strong> → ${escapeHtml(item.deliverAmountUi)} tokens</p>
+      <p class="token-stock ${inventory.inStock ? "in-stock" : "out-of-stock"}">
+        ${inventory.inStock ? `In stock: ${escapeHtml(inventory.uiAmount)}` : "Out of stock"}
+      </p>
+      <button type="button" class="btn btn-primary" style="margin-top:0.75rem;width:100%" ${inventory.inStock ? "" : "disabled"}>
+        Buy
+      </button>
+    </div>
+  `;
+
+  card.querySelector("button")?.addEventListener("click", () => onBuy(item));
+  return card;
+}
+
+export function renderTokenShowcase(
+  container: HTMLElement,
+  catalog: CatalogDocument,
+  enriched: EnrichedToken[],
+  onBuy: (item: CatalogItem) => void,
+): void {
+  const grid = document.createElement("div");
+  grid.className = "token-grid";
+  const carousel = document.createElement("div");
+  carousel.className = "token-carousel";
+
+  for (const e of enriched) {
+    const card = renderTokenCard(e, onBuy);
+    grid.appendChild(card.cloneNode(true) as HTMLElement);
+    carousel.appendChild(card);
+  }
+
+  // Re-bind buy on grid clones
+  grid.querySelectorAll(".token-card").forEach((el, i) => {
+    const btn = el.querySelector("button");
+    btn?.addEventListener("click", () => onBuy(enriched[i].item));
+  });
+
+  container.replaceChildren(grid, carousel);
+}
+
+function escapeHtml(s: string): string {
+  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+
+function escapeAttr(s: string): string {
+  return escapeHtml(s).replace(/"/g, "&quot;");
+}

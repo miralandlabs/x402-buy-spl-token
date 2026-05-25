@@ -1,6 +1,7 @@
 pub mod amounts;
 pub mod axum_adapter;
 pub mod catalog;
+pub mod catalog_api;
 pub mod cold_start;
 pub mod config;
 pub mod cors;
@@ -11,6 +12,7 @@ pub mod init;
 pub mod intent_contract;
 pub mod memory_ledger;
 pub mod merchant_signer;
+pub mod network;
 pub mod orders;
 pub mod parameters;
 pub mod purchase_ledger;
