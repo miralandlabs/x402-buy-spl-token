@@ -26,7 +26,7 @@ export function renderTokenCard(
       <h3>${escapeHtml(displayName)}</h3>
       <p class="token-card-sub">${escapeHtml(item.name)}</p>
       <p class="token-card-mint">${escapeHtml(item.mint)}</p>
-      <p class="token-price"><strong>${escapeHtml(item.priceUsdcUi)} USDC</strong> → ${escapeHtml(item.deliverAmountUi)} tokens</p>
+      <p class="token-price">${formatUnitPriceLabel(item)}</p>
       <p class="token-stock ${inventory.inStock ? "in-stock" : "out-of-stock"}">
         ${inventory.inStock ? `In stock: ${escapeHtml(inventory.uiAmount)}` : "Out of stock"}
       </p>
@@ -96,6 +96,27 @@ export function renderTokenShowcase(
   });
 
   container.replaceChildren(grid, carousel);
+}
+
+function formatUnitPriceLabel(item: CatalogItem): string {
+  const price = escapeHtml(item.priceUsdcUi);
+  const deliverN = Number(item.deliverAmountUi.trim());
+  const singleToken = Number.isFinite(deliverN) && Math.abs(deliverN - 1) < 1e-9;
+
+  if (singleToken) {
+    return `<strong>${price} USDC</strong> per token`;
+  }
+
+  const deliver = escapeHtml(formatDeliverAmountUi(item.deliverAmountUi));
+  return `<strong>${price} USDC</strong> per unit · ${deliver} tokens`;
+}
+
+function formatDeliverAmountUi(deliverUi: string): string {
+  const trimmed = deliverUi.trim();
+  const n = Number(trimmed);
+  if (!Number.isFinite(n)) return trimmed;
+  if (Number.isInteger(n)) return n.toLocaleString("en-US");
+  return n.toLocaleString("en-US", { maximumFractionDigits: 18 }).replace(/\.?0+$/, "");
 }
 
 function escapeHtml(s: string): string {
