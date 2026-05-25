@@ -1,5 +1,6 @@
 import { randomHex32, computeSlaHash } from "./canonicalJson";
 import type { CatalogDocument } from "./catalog";
+import { clusterLabel } from "./catalog";
 
 declare global {
   interface Window {
@@ -76,10 +77,11 @@ export async function fetchQuote(
 
 export async function confirmSlaEscrowPayment(details: {
   usdcAmountRaw: string;
-  network: string;
+  cluster: string;
   deliverAmountRaw: string;
   tokenName: string;
 }): Promise<boolean> {
+  const networkLabel = clusterLabel(details.cluster);
   return new Promise((resolve) => {
     const overlay = document.createElement("div");
     overlay.className = "confirm-overlay";
@@ -88,7 +90,7 @@ export async function confirmSlaEscrowPayment(details: {
         <h4>Confirm SLA-Escrow payment</h4>
         <p>Pay <strong>${formatUsdcAmount(details.usdcAmountRaw)}</strong> into escrow for <strong>${details.tokenName}</strong>.</p>
         <p>Delivery: <strong>${details.deliverAmountRaw}</strong> tokens (raw units per seller quote).</p>
-        <p>Network: <strong>${details.network}</strong></p>
+        <p>Network (Solana ${networkLabel})</p>
         <div class="confirm-actions">
           <button type="button" class="btn btn-ghost" data-action="cancel">Cancel</button>
           <button type="button" class="btn btn-primary" data-action="confirm">Confirm &amp; sign</button>

@@ -119,7 +119,7 @@ export function openPurchaseSheet(
 
         const ok = await confirmSlaEscrowPayment({
           usdcAmountRaw: quoteUsdcRaw,
-          network: catalog.network,
+          cluster: catalog.cluster,
           deliverAmountRaw: deliverRaw,
           tokenName: item.name,
         });

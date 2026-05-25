@@ -211,6 +211,15 @@
   color: var(--fair-text-muted);
 }
 
+.token-card-mint {
+  margin: 0.35rem 0 0.65rem;
+  font-size: 0.68rem;
+  line-height: 1.35;
+  color: var(--fair-text-muted);
+  word-break: break-all;
+  user-select: all;
+}
+
 .token-price strong {
   color: var(--fair-primary);
 }
