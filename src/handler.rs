@@ -243,6 +243,10 @@ async fn build_unpaid_402(
     )
     .await;
 
+    if let Some(resp) = validate_quoted_payment_timeout(headers, timeout_seconds) {
+        return resp;
+    }
+
     // pr402's `build-sla-escrow-payment-tx` resolves `FundPayment.seller`
     // from `extra.beneficiary` (preferred) or `extra.merchantWallet`. That
     // pubkey is what receives the USDC on `ReleasePayment` — the merchant
@@ -442,6 +446,10 @@ const FUND_PAYMENT_DISCRIMINATOR: u8 = 0;
 const FUND_PAYMENT_UID_OFFSET: usize = 1 + 32 + 32 + 32; // 97
 /// Offset of `sla_hash` within the FundPayment instruction's data.
 const FUND_PAYMENT_SLA_HASH_OFFSET: usize = FUND_PAYMENT_UID_OFFSET + 32; // 129
+/// Offset of `amount` (u64 le) within FundPayment instruction data.
+const FUND_PAYMENT_AMOUNT_OFFSET: usize = FUND_PAYMENT_SLA_HASH_OFFSET + 32; // 161
+/// Offset of `ttl_seconds` (i64 le) within FundPayment instruction data.
+const FUND_PAYMENT_TTL_OFFSET: usize = FUND_PAYMENT_AMOUNT_OFFSET + 8; // 169
 /// Total length of FundPayment instruction data: 1-byte discriminator +
 /// 176-byte body.
 const FUND_PAYMENT_DATA_LEN: usize = 1 + 176;
@@ -453,6 +461,8 @@ const FUND_PAYMENT_DATA_LEN: usize = 1 + 176;
 struct FundPaymentRefs {
     payment_uid: [u8; 32],
     sla_hash: [u8; 32],
+    /// FundPayment TTL copied into `payment.expires_at` at funding.
+    ttl_seconds: u64,
 }
 
 impl FundPaymentRefs {
@@ -483,6 +493,7 @@ enum FundPaymentParseError {
     NoFundPaymentInstruction,
     WrongDataLength { expected: usize, actual: usize },
     WrongDiscriminator { actual: u8 },
+    InvalidTtlSeconds { value: i64 },
 }
 
 impl std::fmt::Display for FundPaymentParseError {
@@ -514,6 +525,9 @@ impl std::fmt::Display for FundPaymentParseError {
                 "FundPayment discriminator mismatch: expected {}, got {}",
                 FUND_PAYMENT_DISCRIMINATOR, actual
             ),
+            Self::InvalidTtlSeconds { value } => {
+                write!(f, "FundPayment ttl_seconds is negative: {}", value)
+            }
         }
     }
 }
@@ -572,10 +586,20 @@ fn extract_fund_payment_refs(proof: &Value) -> Result<FundPaymentRefs, FundPayme
     sla_hash.copy_from_slice(
         &candidate.data[FUND_PAYMENT_SLA_HASH_OFFSET..FUND_PAYMENT_SLA_HASH_OFFSET + 32],
     );
+    let ttl_raw = i64::from_le_bytes(
+        candidate.data[FUND_PAYMENT_TTL_OFFSET..FUND_PAYMENT_TTL_OFFSET + 8]
+            .try_into()
+            .expect("slice is 8 bytes"),
+    );
+    if ttl_raw < 0 {
+        return Err(FundPaymentParseError::InvalidTtlSeconds { value: ttl_raw });
+    }
+    let ttl_seconds = ttl_raw as u64;
 
     Ok(FundPaymentRefs {
         payment_uid,
         sla_hash,
+        ttl_seconds,
     })
 }
 
@@ -615,6 +639,21 @@ async fn handle_paid_path(
             );
         }
     };
+
+    let quoted_timeout = crate::parameters::resolve_timeout_sec(
+        state.db.as_deref(),
+        crate::parameters::ENDPOINT_BUY_SPL_TOKEN,
+        state.config.x402_timeout_sec,
+    )
+    .await;
+    if let Err(e) = crate::sla_escrow_ttl::validate_fund_payment_ttl(
+        refs.ttl_seconds,
+        quoted_timeout,
+        crate::sla_escrow_ttl::resolve_delivery_cutoff_seconds(),
+        crate::sla_escrow_ttl::resolve_delivery_budget_seconds(),
+    ) {
+        return map_fund_payment_ttl_error(headers, e);
+    }
 
     // (2) Recompute the canonical SLA hash from the request's query
     //     parameters and compare it to the hash committed by the
@@ -1970,6 +2009,73 @@ fn extract_payment_header(headers: &HeaderMap) -> Option<String> {
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+/// Reject misconfigured or adversarial FundPayment TTL before settlement/delivery.
+fn map_fund_payment_ttl_error(
+    headers: &HeaderMap,
+    err: crate::sla_escrow_ttl::FundPaymentTtlError,
+) -> Response<Body> {
+    let (code, details) = match &err {
+        crate::sla_escrow_ttl::FundPaymentTtlError::TtlMismatch {
+            quoted_max_timeout_seconds,
+            fund_payment_ttl_seconds,
+        } => (
+            "payment_ttl_mismatch",
+            json!({
+                "rule": crate::sla_escrow_ttl::RULE_ID,
+                "quotedMaxTimeoutSeconds": quoted_max_timeout_seconds,
+                "fundPaymentTtlSeconds": fund_payment_ttl_seconds,
+            }),
+        ),
+        crate::sla_escrow_ttl::FundPaymentTtlError::TtlTooShort {
+            fund_payment_ttl_seconds,
+            minimum_required_seconds,
+            delivery_cutoff_seconds,
+            delivery_budget_seconds,
+        } => (
+            "payment_ttl_too_short",
+            json!({
+                "rule": crate::sla_escrow_ttl::RULE_ID,
+                "fundPaymentTtlSeconds": fund_payment_ttl_seconds,
+                "minimumRequiredSeconds": minimum_required_seconds,
+                "deliveryCutoffSeconds": delivery_cutoff_seconds,
+                "deliveryBudgetSeconds": delivery_budget_seconds,
+            }),
+        ),
+    };
+    error_response_with_details(
+        headers,
+        VercelStatusCode::PAYMENT_REQUIRED,
+        code,
+        err.to_string(),
+        details,
+    )
+}
+
+fn validate_quoted_payment_timeout(
+    headers: &HeaderMap,
+    timeout_seconds: u64,
+) -> Option<Response<Body>> {
+    let cutoff = crate::sla_escrow_ttl::resolve_delivery_cutoff_seconds();
+    let budget = crate::sla_escrow_ttl::resolve_delivery_budget_seconds();
+    let min = crate::sla_escrow_ttl::min_fund_payment_ttl_seconds(cutoff, budget);
+    if timeout_seconds < min {
+        return Some(map_fund_payment_ttl_error(
+            headers,
+            crate::sla_escrow_ttl::FundPaymentTtlError::TtlTooShort {
+                fund_payment_ttl_seconds: timeout_seconds,
+                minimum_required_seconds: min,
+                delivery_cutoff_seconds: cutoff,
+                delivery_budget_seconds: budget,
+            },
+        ));
+    }
+    None
+}
 
 /// Construct a [`RegistryClient`] from process env. Fails when the base
 /// URL is unset because we cannot upload anything without it.

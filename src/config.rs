@@ -51,7 +51,7 @@ impl Config {
         let x402_timeout_sec = env::var("X402_PAYMENT_TIMEOUT_SECONDS")
             .ok()
             .and_then(|s| s.parse().ok())
-            .unwrap_or(300);
+            .unwrap_or(3600);
 
         let database_enabled = match env::var("DATABASE_ENABLED").ok().as_deref() {
             Some("0") | Some("false") | Some("FALSE") | Some("no") | Some("NO") => false,

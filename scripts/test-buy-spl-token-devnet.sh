@@ -457,6 +457,10 @@ if [[ "${PAID_CODE}" != "200" ]]; then
     echo "    Diagnostics:" >&2
     echo "    - 402 'sla_hash_mismatch'   → buyer SLA differs from seller recompute (check commitMaterial.deliverAmountRaw + payment_uid)." >&2
     echo "    - 402 'settlement_failed'   → pr402 verify/settle rejected (oracleAuthority, mint, amount mismatch)." >&2
+    echo "    - 502 'registry_unavailable' → REGISTRY_BEARER_TOKEN rejected (401). Re-register:" >&2
+    echo "        bash oracles/scripts/seller-register.sh https://oracle.innoloyalty.com/devnet <keypair.json>" >&2
+    echo "      then set Vercel REGISTRY_BASE_URL=https://oracle.innoloyalty.com/devnet and REGISTRY_BEARER_TOKEN=<BEARER=…>, redeploy." >&2
+    echo "    - 402 'payment_ttl_mismatch' / 'payment_ttl_too_short' → FundPayment TTL tampering or seller timeout too low (see x402/sla-escrow-fund-payment-ttl/v1)." >&2
     echo "    - 502 'transfer_failed'     → seller RPC could not land SPL TransferChecked." >&2
     echo "    - 502 'submit_delivery_failed' → SubmitDelivery exhausted retries (merchant signer must match FundPayment.seller)." >&2
     echo "    - 500 'evidence_schema_invalid' → evidence document failed JSON schema validation." >&2

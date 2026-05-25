@@ -69,6 +69,29 @@ Required env (see [`env.example`](../env.example)):
 - `REGISTRY_BASE_URL`, `REGISTRY_BEARER_TOKEN`
 - `BUY_SPL_TOKEN_CATALOG_JSON` with the test mint
 
+#### Registry bearer (paid path)
+
+On the paid GET the seller uploads the SLA to the evidence registry **before** verify/settle. A missing or wrong bearer returns `502 registry_unavailable` with `bearer token not recognized`.
+
+Register against the **devnet** oracle (wallet choice is independent of merchant/seller keys):
+
+```bash
+bash oracles/scripts/seller-register.sh \
+  https://oracle.innoloyalty.com/devnet \
+  /path/to/keypair.json \
+  x402-buy-spl-token-preview
+# stdout: BEARER=<token>
+```
+
+Set on Vercel (no `/v1/registry` suffix on the base URL):
+
+```
+REGISTRY_BASE_URL=https://oracle.innoloyalty.com/devnet
+REGISTRY_BEARER_TOKEN=<BEARER from above>
+```
+
+Redeploy after updating. Mainnet preview needs `https://oracle.innoloyalty.com/mainnet` and a separate registration.
+
 ## Running
 
 ```bash
@@ -118,6 +141,9 @@ SKIP_ONCHAIN_VERIFY=1 SKIP_RELEASE=1 ./scripts/test-buy-spl-token-devnet.sh
 |---------|----------------|
 | 402 `sla_hash_mismatch` | Buyer SLA bytes differ from seller recompute (wrong `deliverAmountRaw`, `payment_uid`, or query params changed between probe and paid GET) |
 | 402 `settlement_failed` | pr402 rejected verify/settle (oracle not in allowlist, USDC balance, amount mismatch) |
+| 502 `registry_unavailable` | `REGISTRY_BEARER_TOKEN` wrong or expired — re-run `seller-register.sh` for devnet, update Vercel, redeploy |
+| 402 `payment_ttl_mismatch` | FundPayment TTL ≠ seller-quoted `maxTimeoutSeconds` (buyer tampering) |
+| 402 `payment_ttl_too_short` | TTL below `delivery_cutoff + delivery_budget` — raise `X402_PAYMENT_TIMEOUT_SECONDS` (see `x402/sla-escrow-fund-payment-ttl/v1`) |
 | 502 `transfer_failed` | Seller signer lacks SPL inventory or RPC error |
 | 502 `submit_delivery_failed` | Merchant signer pubkey ≠ `FundPayment.seller` |
 | Step 8 timeout | Oracle monitor has not posted `ConfirmOracle` yet — increase `RELEASE_POLL_DEADLINE_SEC` |
