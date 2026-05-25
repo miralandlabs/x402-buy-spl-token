@@ -573,7 +573,8 @@ mod tests {
 
     // ---- Operator config validation ------------------------------------
 
-    static ENV_TEST_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+    static ENV_TEST_LOCK: std::sync::LazyLock<tokio::sync::Mutex<()>> =
+        std::sync::LazyLock::new(|| tokio::sync::Mutex::new(()));
 
     fn clear_operator_env() {
         for key in [
@@ -604,15 +605,10 @@ mod tests {
         }
     }
 
-    fn with_operator_env<F: FnOnce()>(f: F) {
-        let _guard = ENV_TEST_LOCK.lock().unwrap();
-        clear_operator_env();
-        f();
-    }
-
     #[tokio::test]
     async fn operator_config_rejects_missing_merchant() {
-        with_operator_env(|| ());
+        let _guard = ENV_TEST_LOCK.lock().await;
+        clear_operator_env();
         let cfg = minimal_config("EscrowPda1111111111111111111111111111111111");
         let err = validate_operator_config(&cfg, None)
             .await
@@ -622,16 +618,16 @@ mod tests {
 
     #[tokio::test]
     async fn operator_config_rejects_merchant_equal_to_pay_to() {
+        let _guard = ENV_TEST_LOCK.lock().await;
         let pay = "BeALNhc8tykF6wJBZWyXGEkb9Mfvk8JZk8miUL2JDuhw";
-        with_operator_env(|| {
-            std::env::set_var("X402_MERCHANT_WALLET", pay);
-            std::env::set_var(
-                "ORACLE_AUTHORITIES",
-                "[\"oraG62Mr5hDYeSbAtKMpEYFw22SLpZdebXvDe2Qr7xV\"]",
-            );
-            std::env::set_var("REGISTRY_BASE_URL", "https://registry.example.com");
-            std::env::set_var("REGISTRY_BEARER_TOKEN", "test-token");
-        });
+        clear_operator_env();
+        std::env::set_var("X402_MERCHANT_WALLET", pay);
+        std::env::set_var(
+            "ORACLE_AUTHORITIES",
+            "[\"oraG62Mr5hDYeSbAtKMpEYFw22SLpZdebXvDe2Qr7xV\"]",
+        );
+        std::env::set_var("REGISTRY_BASE_URL", "https://registry.example.com");
+        std::env::set_var("REGISTRY_BEARER_TOKEN", "test-token");
 
         let cfg = minimal_config(pay);
         let err = validate_operator_config(&cfg, None)
@@ -645,17 +641,17 @@ mod tests {
 
     #[tokio::test]
     async fn operator_config_happy_path_with_env() {
+        let _guard = ENV_TEST_LOCK.lock().await;
         let pay = "EscrowPda1111111111111111111111111111111111";
         let merchant = "BeALNhc8tykF6wJBZWyXGEkb9Mfvk8JZk8miUL2JDuhw";
-        with_operator_env(|| {
-            std::env::set_var("X402_MERCHANT_WALLET", merchant);
-            std::env::set_var(
-                "ORACLE_AUTHORITIES",
-                "[\"oraG62Mr5hDYeSbAtKMpEYFw22SLpZdebXvDe2Qr7xV\"]",
-            );
-            std::env::set_var("REGISTRY_BASE_URL", "https://registry.example.com");
-            std::env::set_var("REGISTRY_BEARER_TOKEN", "test-token");
-        });
+        clear_operator_env();
+        std::env::set_var("X402_MERCHANT_WALLET", merchant);
+        std::env::set_var(
+            "ORACLE_AUTHORITIES",
+            "[\"oraG62Mr5hDYeSbAtKMpEYFw22SLpZdebXvDe2Qr7xV\"]",
+        );
+        std::env::set_var("REGISTRY_BASE_URL", "https://registry.example.com");
+        std::env::set_var("REGISTRY_BEARER_TOKEN", "test-token");
 
         let cfg = minimal_config(pay);
         validate_operator_config(&cfg, None)
@@ -665,18 +661,18 @@ mod tests {
 
     #[tokio::test]
     async fn merchant_signer_must_match_fund_payment_seller() {
+        let _guard = ENV_TEST_LOCK.lock().await;
         let pay = "EscrowPda1111111111111111111111111111111111";
         let merchant = Keypair::new();
         let wrong_signer = Keypair::new();
-        with_operator_env(|| {
-            std::env::set_var("X402_MERCHANT_WALLET", merchant.pubkey().to_string());
-            std::env::set_var(
-                "ORACLE_AUTHORITIES",
-                "[\"oraG62Mr5hDYeSbAtKMpEYFw22SLpZdebXvDe2Qr7xV\"]",
-            );
-            std::env::set_var("REGISTRY_BASE_URL", "https://registry.example.com");
-            std::env::set_var("REGISTRY_BEARER_TOKEN", "test-token");
-        });
+        clear_operator_env();
+        std::env::set_var("X402_MERCHANT_WALLET", merchant.pubkey().to_string());
+        std::env::set_var(
+            "ORACLE_AUTHORITIES",
+            "[\"oraG62Mr5hDYeSbAtKMpEYFw22SLpZdebXvDe2Qr7xV\"]",
+        );
+        std::env::set_var("REGISTRY_BASE_URL", "https://registry.example.com");
+        std::env::set_var("REGISTRY_BEARER_TOKEN", "test-token");
 
         let err = validate_merchant_signer_matches_payout(None, &wrong_signer.pubkey())
             .await
@@ -692,12 +688,12 @@ mod tests {
 
     #[tokio::test]
     async fn merchant_signer_must_match_beneficiary_when_set() {
+        let _guard = ENV_TEST_LOCK.lock().await;
         let beneficiary = Keypair::new();
         let merchant = Keypair::new();
-        with_operator_env(|| {
-            std::env::set_var("X402_BENEFICIARY", beneficiary.pubkey().to_string());
-            std::env::set_var("X402_MERCHANT_WALLET", merchant.pubkey().to_string());
-        });
+        clear_operator_env();
+        std::env::set_var("X402_BENEFICIARY", beneficiary.pubkey().to_string());
+        std::env::set_var("X402_MERCHANT_WALLET", merchant.pubkey().to_string());
 
         validate_merchant_signer_matches_payout(None, &merchant.pubkey())
             .await
