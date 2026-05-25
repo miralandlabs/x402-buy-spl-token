@@ -65,19 +65,15 @@ pub async fn build_catalog_document(state: &AppState) -> Result<CatalogDocument,
         .as_ref()
         .ok_or_else(|| "seller signer not configured".to_string())?;
 
-    let network = parameters::resolve_network(
-        state.db.as_deref(),
-        parameters::ENDPOINT_BUY_SPL_TOKEN,
-    )
-    .await
-    .unwrap_or_else(|| state.config.x402_network.clone());
+    let network =
+        parameters::resolve_network(state.db.as_deref(), parameters::ENDPOINT_BUY_SPL_TOKEN)
+            .await
+            .unwrap_or_else(|| state.config.x402_network.clone());
 
     let cluster = cluster_name_for_network(&network);
     let usdc_mint = usdc_mint_for_network(&network);
 
-    let rpc_url = env::var("PUBLIC_RPC_URL")
-        .ok()
-        .filter(|s| !s.is_empty());
+    let rpc_url = env::var("PUBLIC_RPC_URL").ok().filter(|s| !s.is_empty());
 
     let items: Vec<CatalogItemResponse> = catalog.entries().iter().map(Into::into).collect();
 
@@ -111,9 +107,7 @@ pub async fn handle_catalog(state: Arc<AppState>) -> Response<Body> {
             .status(VercelStatusCode::SERVICE_UNAVAILABLE)
             .header("Content-Type", "application/json; charset=utf-8")
             .header("Access-Control-Allow-Origin", "*")
-            .body(Body::Text(
-                serde_json::json!({ "error": e }).to_string(),
-            ))
+            .body(Body::Text(serde_json::json!({ "error": e }).to_string()))
             .unwrap(),
     }
 }
@@ -121,11 +115,7 @@ pub async fn handle_catalog(state: Arc<AppState>) -> Response<Body> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{
-        catalog::parse_catalog_json,
-        config::Config,
-        seller_signer::KeypairSigner,
-    };
+    use crate::{catalog::parse_catalog_json, config::Config, seller_signer::KeypairSigner};
     use solana_sdk::signer::keypair::Keypair;
     use std::sync::Arc;
 

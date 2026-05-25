@@ -54,9 +54,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 
                 (&http::Method::OPTIONS, "/api/v1/buy-spl-token")
                 | (&http::Method::OPTIONS, "/api/v1/buy-spl-token/intent-contract")
-                | (&http::Method::OPTIONS, "/api/v1/buy-spl-token/catalog") => {
-                    cors_options()
-                }
+                | (&http::Method::OPTIONS, "/api/v1/buy-spl-token/catalog") => cors_options(),
 
                 (&http::Method::GET, "/api/v1/buy-spl-token") => {
                     handler::handle(&headers, path.as_str(), &query, state).await
