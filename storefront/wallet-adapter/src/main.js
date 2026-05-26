@@ -13,7 +13,11 @@ import { PhantomWalletAdapter } from "@solana/wallet-adapter-phantom";
 import { SolflareWalletAdapter } from "@solana/wallet-adapter-solflare";
 import { TrustWalletAdapter } from "@solana/wallet-adapter-trust";
 import { BackpackWalletAdapter } from "@solana/wallet-adapter-backpack";
-import { VersionedTransaction } from "@solana/web3.js";
+import {
+  ComputeBudgetProgram,
+  TransactionMessage,
+  VersionedTransaction,
+} from "@solana/web3.js";
 import * as buffer from "buffer";
 
 window.Buffer = buffer.Buffer;
@@ -63,6 +67,29 @@ const Wallet = () => {
     </ConnectionProvider>
   );
 };
+
+function isComputeBudgetInstruction(ix) {
+  return ix.programId.equals(ComputeBudgetProgram.programId);
+}
+
+/** Match pr402 `TxBudget::FundPayment` — last-wins anchor after wallet sign. */
+function anchorEscrowComputeBudget(tx) {
+  const decompiled = TransactionMessage.decompile(tx.message);
+  const core = decompiled.instructions.filter(
+    (ix) => !isComputeBudgetInstruction(ix),
+  );
+  const instructions = [
+    ...core,
+    ComputeBudgetProgram.setComputeUnitLimit({ units: 80_000 }),
+    ComputeBudgetProgram.setComputeUnitPrice({ microLamports: 100_000 }),
+  ];
+  const message = new TransactionMessage({
+    payerKey: decompiled.payerKey,
+    recentBlockhash: decompiled.recentBlockhash,
+    instructions,
+  }).compileToLegacyMessage();
+  return new VersionedTransaction(message);
+}
 
 function MountWalletAdapter() {
   const container = document.getElementById("miracle-wallet-adapter");
@@ -121,8 +148,8 @@ function SignTransaction() {
   const { publicKey, signTransaction } = useWallet();
   const callback = useCallback(
     async (msg) => {
-      const tx = VersionedTransaction.deserialize(
-        Buffer.from(msg.b64, "base64"),
+      const tx = anchorEscrowComputeBudget(
+        VersionedTransaction.deserialize(Buffer.from(msg.b64, "base64")),
       );
       const signed = await signTransaction(tx);
       return Buffer.from(signed.serialize()).toString("base64");
