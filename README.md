@@ -1,4 +1,4 @@
-# x402-buy-spl-token
+# x402-buy-spl-token (by Miraland Labs@Hashspace)
 
 Open-source **reference seller** for the **x402 sla-escrow** rail: buyers pay USDC into escrow and receive catalogued SPL tokens on oracle-verified delivery.
 
