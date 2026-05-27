@@ -193,12 +193,12 @@ function renderSuccess(result: PurchaseResult, cluster: string): string {
   const links: string[] = [];
   if (result.transferSignature) {
     links.push(
-      `<a href="${solscanTxUrl(result.transferSignature, cluster)}" target="_blank" rel="noopener">Transfer tx</a>`,
+      `<a href="${solscanTxUrl(result.transferSignature, cluster)}" target="_blank" rel="noopener">Token receipt</a>`,
     );
   }
   if (result.deliverySignature) {
     links.push(
-      `<a href="${solscanTxUrl(result.deliverySignature, cluster)}" target="_blank" rel="noopener">Delivery tx</a>`,
+      `<a href="${solscanTxUrl(result.deliverySignature, cluster)}" target="_blank" rel="noopener">Seller confirmation</a>`,
     );
   }
   return `
