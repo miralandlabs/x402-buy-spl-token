@@ -108,52 +108,50 @@ impl FacilitatorClient {
             .map_err(|e| Error::Internal(format!("supported JSON: {}", e)))
     }
 
-    /// `GET discovery` — canonical `payTo` / PDA preview for a scheme and optional SPL `asset` mint.
+    /// `GET /sellers/{wallet}/rails/{scheme}` — canonical `payTo` / PDA for one scheme (+ optional `asset`).
     pub async fn discovery(
         &self,
         wallet: &str,
         scheme: &str,
         asset: Option<&str>,
     ) -> Result<Value, Error> {
-        let mut req = self
-            .build_get("discovery")
-            .query(&[("wallet", wallet), ("scheme", scheme)]);
+        let path = format!("sellers/{wallet}/rails/{scheme}");
+        let mut req = self.build_get(&path);
         if let Some(m) = asset {
             req = req.query(&[("asset", m)]);
         }
         let response = req
             .send()
             .await
-            .map_err(|e| Error::Internal(format!("facilitator discovery request: {}", e)))?;
+            .map_err(|e| Error::Internal(format!("facilitator seller rail request: {}", e)))?;
         if !response.status().is_success() {
             let status = response.status();
             let error_text = response.text().await.unwrap_or_else(|_| "".into());
             return Err(Error::Internal(format!(
-                "discovery HTTP {}: {}",
+                "seller rail HTTP {}: {}",
                 status, error_text
             )));
         }
         response
             .json()
             .await
-            .map_err(|e| Error::Internal(format!("discovery JSON: {}", e)))
+            .map_err(|e| Error::Internal(format!("seller rail JSON: {}", e)))
     }
 
-    /// Discover official merchant vault addresses by querying the facilitator's onboarding preview.
+    /// Multi-rail seller preview (`GET /sellers/{wallet}/preview`).
     pub async fn onboard(&self, wallet: &str) -> Result<serde_json::Value, Error> {
-        info!("facilitator GET onboard (discovery) for wallet {}", wallet);
-        let response = self
-            .build_get("onboard")
-            .query(&[("wallet", wallet)])
-            .send()
-            .await
-            .map_err(|e| Error::Internal(format!("facilitator onboard request: {}", e)))?;
+        info!("facilitator GET sellers/{}/preview", wallet);
+        let path = format!("sellers/{wallet}/preview");
+        let response =
+            self.build_get(&path).send().await.map_err(|e| {
+                Error::Internal(format!("facilitator seller preview request: {}", e))
+            })?;
 
         if !response.status().is_success() {
             let status = response.status();
             let error_text = response.text().await.unwrap_or_else(|_| "".into());
             return Err(Error::Internal(format!(
-                "onboard discovery HTTP {}: {}",
+                "seller preview HTTP {}: {}",
                 status, error_text
             )));
         }
@@ -161,7 +159,7 @@ impl FacilitatorClient {
         response
             .json()
             .await
-            .map_err(|e| Error::Internal(format!("onboard JSON: {}", e)))
+            .map_err(|e| Error::Internal(format!("seller preview JSON: {}", e)))
     }
 
     pub async fn verify_and_settle(&self, body: &Value) -> Result<SettlementProof, Error> {
