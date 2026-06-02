@@ -1,0 +1,24 @@
+{
+  "schemaVersion": "0.1.0",
+  "origin": "https://spl-token.hashspace.me",
+  "merchantWallet": "BeALNhc8tykF6wJBZWyXGEkb9Mfvk8JZk8miUL2JDuhw",
+  "facilitatorHint": "https://ipay.sh",
+  "resources": [
+    {
+      "id": "buy-spl-token",
+      "title": "Purchase SPL tokens (sla-escrow)",
+      "description": "USDC escrow to SPL delivery with oracle-verified release. Session totals are seller-quoted.",
+      "useCase": "When an agent needs to buy a catalogued SPL token to a recipient wallet under an SLA",
+      "category": "finance",
+      "method": "GET",
+      "resourceUrl": "https://spl-token.hashspace.me/api/v1/buy-spl-token",
+      "scheme": "sla-escrow",
+      "intentContractUrl": "https://spl-token.hashspace.me/api/v1/buy-spl-token/intent-contract",
+      "tags": [
+        "spl",
+        "escrow",
+        "tokens"
+      ]
+    }
+  ]
+}

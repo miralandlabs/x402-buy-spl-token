@@ -38,6 +38,10 @@
             "methods": ["GET", "HEAD", "OPTIONS"]
         },
         {
+            "src": "/.well-known/(.*)",
+            "dest": "/public/.well-known/$1"
+        },
+        {
             "src": "/wallet.js",
             "dest": "/public/wallet.js"
         },
