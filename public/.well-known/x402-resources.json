@@ -11,7 +11,7 @@
       "useCase": "When an agent needs to buy a catalogued SPL token to a recipient wallet under an SLA",
       "category": "finance",
       "method": "GET",
-      "resourceUrl": "https://spl-token.hashspace.me/api/v1/buy-spl-token",
+      "resourceUrl": "https://spl-token.hashspace.me/api/v1/buy-spl-token?token=LSPRXoiUiySA7DrPjZmANsaRXYm1pQsXuw9wHi3XY8W&recipient_owner=BeALNhc8tykF6wJBZWyXGEkb9Mfvk8JZk8miUL2JDuhw&buyer_nonce=0000000000000000000000000000000000000000000000000000000000000000",
       "scheme": "sla-escrow",
       "intentContractUrl": "https://spl-token.hashspace.me/api/v1/buy-spl-token/intent-contract",
       "tags": [
