@@ -74,6 +74,28 @@ Three **distinct** Solana roles — never collapse them:
 
 Also required at cold start: `X402_FACILITATOR_URL`, `ORACLE_AUTHORITIES`, `BUY_SPL_TOKEN_CATALOG_JSON`, `REGISTRY_BASE_URL`, `REGISTRY_BEARER_TOKEN`.
 
+## Operator setup (Vercel)
+
+Helper scripts under `scripts/` (run from the repo root):
+
+| Script | Purpose |
+|--------|---------|
+| [`scripts/get-escrow-pda.sh`](scripts/get-escrow-pda.sh) | Resolve the USDC escrow PDA → set `X402_PAY_TO` (not your merchant wallet). |
+| [`scripts/register-seller-with-registry.sh`](scripts/register-seller-with-registry.sh) | Registry challenge/register → one-time `REGISTRY_BEARER_TOKEN`. Sign with the wallet you register (typically the merchant signer keypair). |
+
+```bash
+# Escrow PDA for devnet preview facilitator + mainnet USDC mint
+FACILITATOR_URL=https://preview.agent.pay402.me ./scripts/get-escrow-pda.sh --network devnet
+
+# Registry bearer (example devnet registry; use your operator URL)
+./scripts/register-seller-with-registry.sh \
+  https://oracle.innoloyalty.com/devnet \
+  ../demo-wallets/seller-keypair.json \
+  --print-pubkey --copy
+```
+
+In the x402 monorepo, [`../oracles/scripts/seller-register.sh`](../oracles/scripts/seller-register.sh) implements the same registry flow if you prefer that entry point.
+
 ## Quick start (no database)
 
 ```bash

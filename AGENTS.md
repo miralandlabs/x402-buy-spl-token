@@ -17,6 +17,7 @@ Single Rust crate (`x402-buy-spl-token`), bin **`buy_spl_token_api`**, deployed 
   `/intent-contract`.
 - `storefront/` — frontend (`package.json`).
 - `migrations/` — optional Postgres (idempotency + parameters).
+- `scripts/` — operator helpers (`get-escrow-pda.sh`, `register-seller-with-registry.sh`, `test-buy-spl-token-devnet.sh`).
 
 Request shape: `?token=<mint>&recipient_owner=<pubkey>&buyer_nonce=<64-hex>&quantity=N`.
 
