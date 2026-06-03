@@ -90,11 +90,11 @@ FACILITATOR_URL=https://preview.agent.pay402.me ./scripts/get-escrow-pda.sh --ne
 # Registry bearer (example devnet registry; use your operator URL)
 ./scripts/register-seller-with-registry.sh \
   https://oracle.innoloyalty.com/devnet \
-  ../demo-wallets/seller-keypair.json \
+  /path/to/seller-keypair.json \
   --print-pubkey --copy
 ```
 
-In the x402 monorepo, [`../oracles/scripts/seller-register.sh`](../oracles/scripts/seller-register.sh) implements the same registry flow if you prefer that entry point.
+Alternative (same registry flow): [miraland-labs/oracles `scripts/seller-register.sh`](https://github.com/miraland-labs/oracles/blob/main/scripts/seller-register.sh).
 
 ## Quick start (no database)
 

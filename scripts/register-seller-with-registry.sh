@@ -37,7 +37,7 @@
 #
 #   scripts/register-seller-with-registry.sh \
 #       https://oracle.innoloyalty.com/devnet \
-#       ../demo-wallets/seller-keypair.json \
+#       /path/to/seller-keypair.json \
 #       --print-pubkey --copy
 #
 # Output: the raw bearer token on stdout. Diagnostics on stderr.
